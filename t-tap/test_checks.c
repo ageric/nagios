@@ -369,6 +369,7 @@ main(int argc, char **argv) {
 	host1->plugin_output = strdup("");
 	host1->long_plugin_output = strdup("");
 	host1->perf_data = strdup("");
+	host1->saved_data = strdup("");
 	host1->host_check_command = strdup("Dummy command required");
 	host1->accept_passive_host_checks = TRUE;
 	passive_host_checks_are_soft = TRUE;

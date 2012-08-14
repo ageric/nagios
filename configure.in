@@ -579,6 +579,11 @@ if test x$USE_EVENTBROKER = xyes; then
 	AC_SUBST(BROKER_H)
 fi
 
+dnl Get rid of annonying warnings that function asprintf returns value that is ignored
+if test "${GCC}" = "yes"
+then
+    CFLAGS="${CFLAGS} -Wstrict-prototypes -Wno-unused-result"
+fi
 
 dnl Option for compiling under CYGWIN
 nagios_name=nagios

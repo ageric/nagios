@@ -407,7 +407,7 @@ int process_check_result(check_result *);
 int delete_check_result_file(char *);
 int init_check_result(check_result *);
 int free_check_result(check_result *);                  	/* frees memory associated with a host/service check result */
-int parse_check_output(char *, char **, char **, char **, int, int);
+int parse_check_output(char *, char **, char **, char **, char**, int, int);
 int open_command_file(void);					/* creates the external command file as a named pipe (FIFO) and opens it for reading */
 int close_command_file(void);					/* closes and deletes the external command file (FIFO) */
 

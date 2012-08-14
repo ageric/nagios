@@ -1081,6 +1081,8 @@ void show_host_info(void) {
 
 		printf("<TR><TD CLASS='dataVar' VALIGN='top'>Performance Data:</td><td CLASS='dataVal'>%s</td></tr>\n", (temp_hoststatus->perf_data == NULL) ? "" : html_encode(temp_hoststatus->perf_data, TRUE));
 
+		printf("<tr><td CLASS='dataVar' VALIGN='top'>Saved Data:</td><td CLASS='dataVal'>%s</td></tr>\n", (temp_hoststatus->saved_data == NULL) ? "" : html_encode(temp_hoststatus->saved_data, TRUE));
+
 		printf("<TR><TD CLASS='dataVar'>Current Attempt:</TD><TD CLASS='dataVal'>%d/%d", temp_hoststatus->current_attempt, temp_hoststatus->max_attempts);
 		printf("&nbsp;&nbsp;(%s state)</TD></TR>\n", (temp_hoststatus->state_type == HARD_STATE) ? "HARD" : "SOFT");
 
@@ -1393,6 +1395,8 @@ void show_service_info(void) {
 		printf("</TD></TR>\n");
 
 		printf("<TR><TD CLASS='dataVar' VALIGN='top'>Performance Data:</td><td CLASS='dataVal'>%s</td></tr>\n", (temp_svcstatus->perf_data == NULL) ? "" : html_encode(temp_svcstatus->perf_data, TRUE));
+
+		printf("<tr><td CLASS='dataVar' VALIGN='top'>Saved Data:</td><td CLASS='dataVal'>%s</td></tr>\n", (temp_svcstatus->saved_data == NULL) ? "" : html_encode(temp_svcstatus->saved_data, TRUE));
 
 		printf("<TR><TD CLASS='dataVar'>Current Attempt:</TD><TD CLASS='dataVal'>%d/%d", temp_svcstatus->current_attempt, temp_svcstatus->max_attempts);
 		printf("&nbsp;&nbsp;(%s state)</TD></TR>\n", (temp_svcstatus->state_type == HARD_STATE) ? "HARD" : "SOFT");

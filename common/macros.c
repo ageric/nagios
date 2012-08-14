@@ -678,6 +678,7 @@ int grab_macrox_value_r(nagios_macros *mac, int macro_type, char *arg1, char *ar
 		case MACRO_LASTHOSTSTATECHANGE:
 		case MACRO_HOSTOUTPUT:
 		case MACRO_HOSTPERFDATA:
+		case MACRO_HOSTSAVEDDATA:
 		case MACRO_HOSTSTATE:
 		case MACRO_HOSTSTATEID:
 		case MACRO_HOSTATTEMPT:
@@ -813,6 +814,7 @@ int grab_macrox_value_r(nagios_macros *mac, int macro_type, char *arg1, char *ar
 		case MACRO_LASTSERVICESTATECHANGE:
 		case MACRO_SERVICEOUTPUT:
 		case MACRO_SERVICEPERFDATA:
+		case MACRO_SERVICESAVEDDATA:
 		case MACRO_SERVICEEXECUTIONTIME:
 		case MACRO_SERVICELATENCY:
 		case MACRO_SERVICEDURATION:
@@ -1652,6 +1654,10 @@ int grab_standard_host_macro_r(nagios_macros *mac, int macro_type, host *temp_ho
 			if(temp_host->perf_data)
 				*output = (char *)strdup(temp_host->perf_data);
 			break;
+		case MACRO_HOSTSAVEDDATA:
+			if(temp_host->saved_data)
+				*output = (char *)strdup(temp_host->saved_data);
+			break;
 #endif
 		case MACRO_HOSTCHECKCOMMAND:
 			if(temp_host->host_check_command)
@@ -1997,6 +2003,9 @@ int grab_standard_service_macro_r(nagios_macros *mac, int macro_type, service *t
 			if(temp_service->perf_data)
 				*output = (char *)strdup(temp_service->perf_data);
 			break;
+		case MACRO_SERVICESAVEDDATA:
+			if(temp_service->saved_data)
+				*output = (char *)strdup(temp_service->saved_data);
 #endif
 		case MACRO_SERVICECHECKCOMMAND:
 			if(temp_service->service_check_command)
@@ -2630,6 +2639,8 @@ int init_macrox_names(void) {
 	add_macrox_name(SERVICEOUTPUT);
 	add_macrox_name(HOSTPERFDATA);
 	add_macrox_name(SERVICEPERFDATA);
+	add_macrox_name(HOSTSAVEDDATA);
+	add_macrox_name(SERVICESAVEDDATA);
 	add_macrox_name(CONTACTNAME);
 	add_macrox_name(CONTACTALIAS);
 	add_macrox_name(CONTACTEMAIL);
@@ -2921,6 +2932,7 @@ int clear_service_macros_r(nagios_macros *mac) {
 	my_free(mac->x[MACRO_SERVICEOUTPUT]);
 	my_free(mac->x[MACRO_LONGSERVICEOUTPUT]);
 	my_free(mac->x[MACRO_SERVICEPERFDATA]);
+	my_free(mac->x[MACRO_SERVICESAVEDDATA]);
 
 	/* these are recursive but persistent. what to do? */
 	my_free(mac->x[MACRO_SERVICECHECKCOMMAND]);
@@ -2987,6 +2999,7 @@ int clear_host_macros_r(nagios_macros *mac) {
 	my_free(mac->x[MACRO_HOSTOUTPUT]);
 	my_free(mac->x[MACRO_LONGHOSTOUTPUT]);
 	my_free(mac->x[MACRO_HOSTPERFDATA]);
+	my_free(mac->x[MACRO_HOSTSAVEDDATA]);
 
 	/* these are recursive but persistent. what to do? */
 	my_free(mac->x[MACRO_HOSTCHECKCOMMAND]);
