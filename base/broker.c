@@ -190,11 +190,10 @@ int broker_event_handler(int type, int flags, int attr, int eventhandler_type, v
 
 	/* get command name/args */
 	if(cmd != NULL) {
-		command_buf = strchr(cmd,'!');
-		if (command_temp!=NULL) {
+		if ((command_buf=strchr(cmd,'!'))!=NULL) {
 			command_name = (char *) strndup(cmd,(command_buf-cmd));
 			command_buf++;
-			command_args = (char *) stdrup(command_buf);
+			command_args = (char *) strdup(command_buf);
 			}
 		else {
 			command_name = (char *) strdup(cmd); 
@@ -257,11 +256,10 @@ int broker_host_check(int type, int flags, int attr, host *hst, int check_type, 
 
         /* get command name/args */
 	if(cmd != NULL) {
-		command_buf = strchr(cmd,'!');
-		if (command_temp!=NULL) {
+		if ((command_buf=strchr(cmd,'!'))!=NULL) {
 			command_name = (char *) strndup(cmd,(command_buf-cmd));
 			command_buf++;
-			command_args = (char *) stdrup(command_buf);
+			command_args = (char *) strdup(command_buf);
 			}
 		else {
 			command_name = (char *) strdup(cmd);
@@ -320,11 +318,10 @@ int broker_service_check(int type, int flags, int attr, service *svc, int check_
 
 	/* get command name/args */
 	if(cmd != NULL) {
-		command_buf = strchr(cmd,'!');
-		 if (command_temp!=NULL) {
+		 if ((command_buf=strchr(cmd,'!'))!=NULL) {
 			command_name = (char *) strndup(cmd,(command_buf-cmd));
 			command_buf++;
-			command_args = (char *) stdrup(command_buf);
+			command_args = (char *) strdup(command_buf);
 			}
 		else {
 			command_name = (char *) strdup(cmd);
@@ -702,11 +699,10 @@ int broker_contact_notification_method_data(int type, int flags, int attr, int n
 
 	/* get command name/args */
 	if(cmd != NULL) {
-		command_buf = strchr(cmd,'!');
-		if (command_temp!=NULL) {
+		if ((command_buf=strchr(cmd,'!'))!=NULL) {
 			command_name = (char *) strndup(cmd,(command_buf-cmd));
 			command_buf++;
-			command_args = (char *) stdrup(command_buf);
+			command_args = (char *) strdup(command_buf);
 			}
 		else {
 			command_name = (char *) strdup(cmd);

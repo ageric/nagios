@@ -2049,7 +2049,7 @@ int process_check_result_file(char *fname) {
 	char *input = NULL;
 	char *var = NULL;
 	char *val = NULL;
-	char *v1 = NULL, *v2 = NULL;
+	char *v2 = NULL;
 	char *temp, *temp2;
 	time_t current_time;
 	check_result cr;
@@ -2111,7 +2111,7 @@ int process_check_result_file(char *fname) {
 
                 /* WAS: if((val = my_strtok(NULL, "\n")) == NULL) continue */
 		if (strlen(temp)!=0) {
-			if ((temp2 = strchr('\n')) != NULL)
+			if ((temp2 = strchr(temp,'\n')) != NULL)
 				val = strndup(temp, (temp2-temp));
 			else
 				val = strdup(temp);
@@ -2153,7 +2153,7 @@ int process_check_result_file(char *fname) {
 				v2++;
 				cr.start_time.tv_sec = strtoul(val, NULL, 0);
 				cr.start_time.tv_usec = strtoul(v2, NULL, 0);
-				v2---;
+				v2--;
 				*v2 = '.';
 				}
 			else if(!strcmp(var, "finish_time")) {
