@@ -2,8 +2,9 @@
  *
  * MACROS.C - Common macro functions for Nagios
  *
+ * Copyright (c) 2011-2012 Nagios Core Development Team
  * Copyright (c) 1999-2010 Ethan Galstad (egalstad@nagios.org)
- * Last Modified: 08-06-2010
+ * Last Modified: 08-15-2012 [WL]
  *
  * License:
  *
@@ -2006,6 +2007,7 @@ int grab_standard_service_macro_r(nagios_macros *mac, int macro_type, service *t
 		case MACRO_SERVICESAVEDDATA:
 			if(temp_service->saved_data)
 				*output = (char *)strdup(temp_service->saved_data);
+			break;
 #endif
 		case MACRO_SERVICECHECKCOMMAND:
 			if(temp_service->service_check_command)

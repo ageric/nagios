@@ -2,8 +2,9 @@
  *
  * STATUSDATA.H - Header for external status data routines
  *
- * Copyright (c) 2000-2007 Ethan Galstad (egalstad@nagios.org)
- * Last Modified:   10-19-2007
+ * Copyright (c) 2011-2012 Nagios Core Development Team
+ * Copyright (c) 1999-2010 Ethan Galstad (egalstad@nagios.org)
+ * Last Modified: 08-12-2012 [WL]
  *
  * License:
  *

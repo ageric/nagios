@@ -2,8 +2,9 @@
  *
  * OBJECTS.H - Header file for object addition/search functions
  *
- * Copyright (c) 1999-2007 Ethan Galstad (egalstad@nagios.org)
- * Last Modified: 11-10-2007
+ * Copyright (c) 2011-2012 Nagios Core Development Team
+ * Copyright (c) 1999-2010 Ethan Galstad (egalstad@nagios.org)
+ * Last Modified: 08-12-2012 [WL]
  *
  * License:
  *
