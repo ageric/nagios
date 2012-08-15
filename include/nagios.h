@@ -34,7 +34,7 @@
 #include "locations.h"
 #include "objects.h"
 #include "macros.h"
-#include "lib/libnagios.h" /* re-run configure if this path doesn't work */
+#include "lib/libnagios.h"
 
 	/************* MISC LENGTH/SIZE DEFINITIONS ***********/
 
@@ -58,7 +58,6 @@
 
 #define DEFAULT_INTER_CHECK_DELAY				5.0	/* seconds between initial service check scheduling */
 #define DEFAULT_INTERLEAVE_FACTOR      				1       /* default interleave to use when scheduling checks */
-#define DEFAULT_SLEEP_TIME      				0.5    	/* seconds between event run checks */
 #define DEFAULT_INTERVAL_LENGTH 				60     	/* seconds per interval unit for check scheduling */
 #define DEFAULT_RETRY_INTERVAL  				30	/* services are retried in 30 seconds if they're not OK */
 #define DEFAULT_CHECK_REAPER_INTERVAL				10	/* interval in seconds to reap host and service check results */
@@ -161,15 +160,6 @@
 
 #define PROPAGATE_TO_PARENT_HOSTS	1
 #define PROPAGATE_TO_CHILD_HOSTS	2
-
-
-
-	/****************** SERVICE STATES ********************/
-
-#define STATE_OK			0
-#define STATE_WARNING			1
-#define STATE_CRITICAL			2
-#define STATE_UNKNOWN			3       /* changed from -1 on 02/24/2001 */
 
 
 
