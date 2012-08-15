@@ -104,7 +104,6 @@ int             notification_timeout = DEFAULT_NOTIFICATION_TIMEOUT;
 int             ocsp_timeout = DEFAULT_OCSP_TIMEOUT;
 int             ochp_timeout = DEFAULT_OCHP_TIMEOUT;
 
-double          sleep_time = DEFAULT_SLEEP_TIME;
 int             interval_length = DEFAULT_INTERVAL_LENGTH;
 int             service_inter_check_delay_method = ICD_SMART;
 int             host_inter_check_delay_method = ICD_SMART;
@@ -136,7 +135,6 @@ int             update_available = FALSE;
 char            *last_program_version = NULL;
 char            *new_program_version = NULL;
 
-time_t          last_command_status_update = 0L;
 time_t          last_log_rotation = 0L;
 time_t          last_program_stop = 0L;
 
@@ -175,8 +173,6 @@ int             sigrestart = FALSE;
 char            *sigs[35] = {"EXIT", "HUP", "INT", "QUIT", "ILL", "TRAP", "ABRT", "BUS", "FPE", "KILL", "USR1", "SEGV", "USR2", "PIPE", "ALRM", "TERM", "STKFLT", "CHLD", "CONT", "STOP", "TSTP", "TTIN", "TTOU", "URG", "XCPU", "XFSZ", "VTALRM", "PROF", "WINCH", "IO", "PWR", "UNUSED", "ZERR", "DEBUG", (char *)NULL};
 int             caught_signal = FALSE;
 int             sig_id = 0;
-
-int             restarting = FALSE;
 
 int             verify_config = FALSE;
 int             verify_object_relationships = TRUE;
@@ -250,8 +246,6 @@ notification    *notification_list;
 
 check_result    check_result_info;
 unsigned long	max_check_result_file_age = DEFAULT_MAX_CHECK_RESULT_AGE;
-
-dbuf            check_result_dbuf;
 
 check_stats     check_statistics[MAX_CHECK_STATS_TYPES];
 
@@ -835,9 +829,6 @@ int main(int argc, char **argv, char **env) {
 
 			/* clean up the scheduled downtime data */
 			cleanup_downtime_data(config_file);
-
-			/* clean up the comment data */
-			cleanup_comment_data(config_file);
 
 			/* clean up the status data unless we're restarting */
 			if(sigrestart == FALSE) {
