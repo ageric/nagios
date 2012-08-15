@@ -2,8 +2,9 @@
  *
  * UTILS.C - Miscellaneous utility functions for Nagios
  *
- * Copyright (c) 1999-2009 Ethan Galstad (egalstad@nagios.org)
- * Last Modified: 06-16-2009
+ * Copyright (c) 2010-2012 Nagios Core Development Team
+ * Copyright (c) 2002-2006 Ethan Galstad (egalstad@nagios.org)
+ * Last Modified: 08-12-2012 [WL]
  *
  * License:
  *
@@ -2062,6 +2063,7 @@ int process_check_result_file(char *fname) {
 	char *var = NULL;
 	char *val = NULL;
 	char *v1 = NULL, *v2 = NULL;
+	char *temp, *temp2;
 	time_t current_time;
 	check_result cr;
 
@@ -2113,10 +2115,21 @@ int process_check_result_file(char *fname) {
 			cr.output_file = fname;
 			}
 
-		if((var = my_strtok(input, "=")) == NULL)
-			continue;
-		if((val = my_strtok(NULL, "\n")) == NULL)
-			continue;
+                /* WAS: if((var = my_strtok(input, "=")) == NULL) continue */
+		if ((temp = strchr(input,'=')) != NULL) {
+			var = strndup(input,(temp-input));
+			temp++;
+			}
+		else continue;
+
+                /* WAS: if((val = my_strtok(NULL, "\n")) == NULL) continue */
+		if (strlen(temp)!=0) {
+			if ((temp2 = strchr('\n')) != NULL)
+				val = strndup(temp, (temp2-temp));
+			else
+				val = strdup(temp);
+			}
+		else continue;
 
 		/* found the file time */
 		if(!strcmp(var, "file_time")) {
@@ -2147,20 +2160,24 @@ int process_check_result_file(char *fname) {
 			else if(!strcmp(var, "latency"))
 				cr.latency = strtod(val, NULL);
 			else if(!strcmp(var, "start_time")) {
-				if((v1 = strtok(val, ".")) == NULL)
+				if((v2 = strchr(val, '.')) == NULL)
 					continue;
-				if((v2 = strtok(NULL, "\n")) == NULL)
-					continue;
-				cr.start_time.tv_sec = strtoul(v1, NULL, 0);
+				*v2 = '\0'; /* this actually is not necessary */
+				v2++;
+				cr.start_time.tv_sec = strtoul(val, NULL, 0);
 				cr.start_time.tv_usec = strtoul(v2, NULL, 0);
+				v2---;
+				*v2 = '.';
 				}
 			else if(!strcmp(var, "finish_time")) {
-				if((v1 = strtok(val, ".")) == NULL)
+				if ((v2 = strchr(val, '.')) == NULL)
 					continue;
-				if((v2 = strtok(NULL, "\n")) == NULL)
-					continue;
-				cr.finish_time.tv_sec = strtoul(v1, NULL, 0);
+				*v2 = '\0';
+				v2++;
+				cr.finish_time.tv_sec = strtoul(val, NULL, 0);
 				cr.finish_time.tv_usec = strtoul(v2, NULL, 0);
+				v2--;
+				*v2 = '.';
 				}
 			else if(!strcmp(var, "early_timeout"))
 				cr.early_timeout = atoi(val);
@@ -3192,6 +3209,7 @@ int query_update_api(void) {
 	char recv_buf[1024];
 	int report_install = FALSE;
 	char *ptr = NULL;
+	char *ptr2, *ptr3;
 	int current_line = 0;
 	int buf_index = 0;
 	int in_header = TRUE;
@@ -3264,8 +3282,16 @@ int query_update_api(void) {
 			if(in_header == TRUE)
 				continue;
 
-			var = strtok(ptr, "=");
-			val = strtok(NULL, "\n");
+			/* Replaced: var = strtok(ptr, "=");
+                        	     val = strtok(NULL, "\n"); */
+			if ((ptr2 = strchr(ptr,'='))!=NULL) {
+				var = strndup(ptr,(val-ptr));
+				ptr2 ++;
+				if ((ptr3 = strchr(ptr,'\n'))!=NULL)
+					val = strndup(ptr2,(ptr3-ptr2));
+				else
+					val = strdup(ptr2);
+				}
 
 			if(!strcmp(var, "UPDATE_AVAILABLE")) {
 				update_available = atoi(val);

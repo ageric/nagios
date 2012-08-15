@@ -338,21 +338,20 @@ void strip(char *buffer) {
  **************************************************/
 /* dual hash function */
 int hashfunc(const char *name1, const char *name2, int hashslots) {
-	unsigned int i, result;
+	unsigned int result;
+	char* p;
 
 	result = 0;
 
 	if(name1)
-		for(i = 0; i < strlen(name1); i++)
-			result += name1[i];
-
+		for(p=name1; *p!='\0'; p++)
+			result += *p;
+	
 	if(name2)
-		for(i = 0; i < strlen(name2); i++)
-			result += name2[i];
+		for(p=name2; *p!='\0'; p++)
+			result += *p;
 
-	result = result % hashslots;
-
-	return result;
+	return result % hashslots;
 	}
 
 /* dual hash data comparison */
