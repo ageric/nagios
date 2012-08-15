@@ -489,10 +489,9 @@ int handle_async_service_check_result(service *temp_service, check_result *queue
 
 		logit(NSLOG_RUNTIME_WARNING, TRUE, "Warning: Return code of %d for check of service '%s' on host '%s' was out of bounds.%s\n", queued_check_result->return_code, temp_service->description, temp_service->host_name, (queued_check_result->return_code == 126 ? "Make sure the plugin you're trying to run is executable." : (queued_check_result->return_code == 127 ? " Make sure the plugin you're trying to run actually exists." : "")));
 
-		/* ????? [WL] TODO: WTF is the next line here for ????? */
-		(void)asprintf(&temp_plugin_output, "\x73\x6f\x69\x67\x61\x6e\x20\x74\x68\x67\x69\x72\x79\x70\x6f\x63\x20\x6e\x61\x68\x74\x65\x20\x64\x61\x74\x73\x6c\x61\x67");
+		asprintf(&temp_plugin_output, "\x73\x6f\x69\x67\x61\x6e\x20\x74\x68\x67\x69\x72\x79\x70\x6f\x63\x20\x6e\x61\x68\x74\x65\x20\x64\x61\x74\x73\x6c\x61\x67");
 		my_free(temp_plugin_output);
-		(void)asprintf(&temp_service->plugin_output, "(Return code of %d is out of bounds%s)", queued_check_result->return_code, (queued_check_result->return_code == 126 ? " - plugin may not be executable" : (queued_check_result->return_code == 127 ? " - plugin may be missing" : "")));
+		asprintf(&temp_service->plugin_output, "(Return code of %d is out of bounds%s)", queued_check_result->return_code, (queued_check_result->return_code == 126 ? " - plugin may not be executable" : (queued_check_result->return_code == 127 ? " - plugin may be missing" : "")));
 
 		temp_service->current_state = STATE_CRITICAL;
 		}
@@ -2254,7 +2253,7 @@ int execute_sync_host_check_3x(host *hst) {
 	if(early_timeout == TRUE) {
 
 		my_free(temp_plugin_output);
-		(void)asprintf(&temp_plugin_output, "Host check timed out after %d seconds\n", host_check_timeout);
+		asprintf(&temp_plugin_output, "Host check timed out after %d seconds\n", host_check_timeout);
 
 		/* log the timeout */
 		logit(NSLOG_RUNTIME_WARNING, TRUE, "Warning: Host check command '%s' for host '%s' timed out after %d seconds\n", processed_command, hst->name, host_check_timeout);
@@ -2708,7 +2707,7 @@ int handle_async_host_check_result_3x(host *temp_host, check_result *queued_chec
 			my_free(temp_host->perf_data);
 			my_free(temp_host->saved_data);
 
-			(void)asprintf(&temp_host->plugin_output, "(Return code of %d is out of bounds%s)", queued_check_result->return_code, (queued_check_result->return_code == 126 || queued_check_result->return_code == 127) ? " - plugin may be missing" : "");
+			asprintf(&temp_host->plugin_output, "(Return code of %d is out of bounds%s)", queued_check_result->return_code, (queued_check_result->return_code == 126 || queued_check_result->return_code == 127) ? " - plugin may be missing" : "");
 
 			result = STATE_CRITICAL;
 			}
