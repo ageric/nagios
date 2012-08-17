@@ -2,8 +2,9 @@
  *
  * CONFIG.C - Configuration input and verification routines for Nagios
  *
- * Copyright (c) 1999-2008 Ethan Galstad (egalstad@nagios.org)
- * Last Modified: 12-14-2008
+ * Copyright (c) 2010-2012 Nagios Core Development Team
+ * Copyright (c) 2002-2009 Ethan Galstad (egalstad@nagios.org)
+ * Last Modified: 08-16-2012 [WL]
  *
  * License:
  *
@@ -206,7 +207,6 @@ extern unsigned long    max_debug_file_size;
 extern int              allow_empty_hostgroup_assignment;
 
 
-
 /******************************************************************/
 /************** CONFIGURATION INPUT FUNCTIONS *********************/
 /******************************************************************/
@@ -254,7 +254,6 @@ int read_main_config_file(char *main_config_file) {
 	mmapfile *thefile = NULL;
 	int current_line = 0;
 	int error = FALSE;
-	char *modptr = NULL;
 	char *argptr = NULL;
 	DIR *tmpdir = NULL;
 	nagios_macros *mac;
@@ -293,29 +292,13 @@ int read_main_config_file(char *main_config_file) {
 		if(input[0] == '\x0' || input[0] == '#')
 			continue;
 
-		/* get the variable name */
-		if((temp_ptr = my_strtok(input, "=")) == NULL) {
-			asprintf(&error_message, "NULL variable");
-			error = TRUE;
-			break;
-			}
-		if((variable = (char *)strdup(temp_ptr)) == NULL) {
-			asprintf(&error_message, "malloc() error");
+		/* get the variable and value */
+		if (!my_str2parts(input,'=', &variable,&value)) {
+			asprintf(&error_message, "bad variable declaration: %s", input);
 			error = TRUE;
 			break;
 			}
 
-		/* get the value */
-		if((temp_ptr = my_strtok(NULL, "\n")) == NULL) {
-			asprintf(&error_message, "NULL value");
-			error = TRUE;
-			break;
-			}
-		if((value = (char *)strdup(temp_ptr)) == NULL) {
-			asprintf(&error_message, "malloc() error");
-			error = TRUE;
-			break;
-			}
 		strip(variable);
 		strip(value);
 
@@ -723,7 +706,6 @@ int read_main_config_file(char *main_config_file) {
 				break;
 				}
 			}
-
         
 		else if(!strcmp(variable,"service_check_timeout_state")){
 
@@ -1211,11 +1193,24 @@ int read_main_config_file(char *main_config_file) {
 
 
 		else if(!strcmp(variable, "broker_module")) {
-			modptr = strtok(value, " \n");
-			argptr = strtok(NULL, "\n");
+			/* WAS:	modptr = strtok(value, " \n");
+				argptr = strtok(NULL, "\n"); */
+			if ((argptr = strstr(value, " \n"))!=NULL) {
+			      *argptr='\0';
+			      argptr++;
+			      argptr++;
+			      if ((temp_ptr = strchr(argptr,'\n'))!=NULL)
+				    *temp_ptr='\0';
 #ifdef USE_EVENT_BROKER
-			neb_add_module(modptr, argptr, TRUE);
+			      /* input mod (value) and arg (argptr) are
+			       * strduped in neb_add_module already */
+			      neb_add_module(value, argptr, TRUE);
 #endif
+			      if (temp_ptr!=NULL) *temp_ptr='\n';
+			      argptr--;
+			      argptr--;
+			      *argptr=' ';
+			      }
 			}
 
 		else if(!strcmp(variable, "use_regexp_matching"))
@@ -1332,7 +1327,6 @@ int read_main_config_file(char *main_config_file) {
 	if(child_processes_fork_twice == -1)
 		child_processes_fork_twice = (use_large_installation_tweaks == TRUE) ? FALSE : TRUE;
 
-
 	/* handle errors */
 	if(error == TRUE) {
 		logit(NSLOG_CONFIG_ERROR, TRUE, "Error in configuration file '%s' - Line %d (%s)", main_config_file, current_line, (error_message == NULL) ? "NULL" : error_message);
@@ -1360,14 +1354,11 @@ int read_main_config_file(char *main_config_file) {
 	return OK;
 	}
 
-
-
 /* processes macros in resource file */
 int read_resource_file(char *resource_file) {
 	char *input = NULL;
 	char *variable = NULL;
 	char *value = NULL;
-	char *temp_ptr = NULL;
 	mmapfile *thefile = NULL;
 	int current_line = 1;
 	int error = FALSE;
@@ -1398,24 +1389,9 @@ int read_resource_file(char *resource_file) {
 
 		strip(input);
 
-		/* get the variable name */
-		if((temp_ptr = my_strtok(input, "=")) == NULL) {
-			logit(NSLOG_CONFIG_ERROR, TRUE, "Error: NULL variable - Line %d of resource file '%s'", current_line, resource_file);
-			error = TRUE;
-			break;
-			}
-		if((variable = (char *)strdup(temp_ptr)) == NULL) {
-			error = TRUE;
-			break;
-			}
-
-		/* get the value */
-		if((temp_ptr = my_strtok(NULL, "\n")) == NULL) {
-			logit(NSLOG_CONFIG_ERROR, TRUE, "Error: NULL variable value - Line %d of resource file '%s'", current_line, resource_file);
-			error = TRUE;
-			break;
-			}
-		if((value = (char *)strdup(temp_ptr)) == NULL) {
+		/* get the variable and value pair */
+		if (!my_str2parts(input,'=', &variable,&value)) {
+			logit(NSLOG_CONFIG_ERROR, TRUE, "Error: Bad variable declaration - Line %d of resource file '%s'", current_line, resource_file);
 			error = TRUE;
 			break;
 			}
@@ -1450,11 +1426,7 @@ int read_resource_file(char *resource_file) {
 	return OK;
 	}
 
-
-
-
-
-
+	
 /****************************************************************/
 /**************** CONFIG VERIFICATION FUNCTIONS *****************/
 /****************************************************************/
@@ -1465,13 +1437,12 @@ int pre_flight_check(void) {
 	char *buf = NULL;
 	service *temp_service = NULL;
 	command *temp_command = NULL;
-	char *temp_command_name = "";
+	char *ptr = NULL;
 	int warnings = 0;
 	int errors = 0;
 	struct timeval tv[4];
 	double runtime[4];
 	int temp_path_fd = -1;
-
 
 	if(test_scheduling == TRUE)
 		gettimeofday(&tv[0], NULL);
@@ -1482,7 +1453,6 @@ int pre_flight_check(void) {
 	pre_flight_object_check(&warnings, &errors);
 	if(test_scheduling == TRUE)
 		gettimeofday(&tv[1], NULL);
-
 
 	/********************************************/
 	/* check for circular paths between hosts   */
@@ -1497,88 +1467,83 @@ int pre_flight_check(void) {
 	/********************************************/
 	if(verify_config == TRUE)
 		printf("Checking global event handlers...\n");
+
 	if(global_host_event_handler != NULL) {
 
 		/* check the event handler command */
 		buf = (char *)strdup(global_host_event_handler);
 
 		/* get the command name, leave any arguments behind */
-		temp_command_name = my_strtok(buf, "!");
-
-		temp_command = find_command(temp_command_name);
-		if(temp_command == NULL) {
-			logit(NSLOG_VERIFICATION_ERROR, TRUE, "Error: Global host event handler command '%s' is not defined anywhere!", temp_command_name);
+		if((ptr = strchr(buf,'!'))!=NULL) *ptr='\0';
+		
+		if((temp_command = find_command(buf)) == NULL) {
+			logit(NSLOG_VERIFICATION_ERROR, TRUE, "Error: Global host event handler command '%s' is not defined anywhere!", buf);
 			errors++;
 			}
-
-		/* save the pointer to the command for later */
-		global_host_event_handler_ptr = temp_command;
-
+		else	/* save the pointer to the command for later */
+			global_host_event_handler_ptr = temp_command;
+		
+		if (ptr!=NULL) *ptr='!';
 		my_free(buf);
 		}
+
 	if(global_service_event_handler != NULL) {
 
 		/* check the event handler command */
 		buf = (char *)strdup(global_service_event_handler);
 
 		/* get the command name, leave any arguments behind */
-		temp_command_name = my_strtok(buf, "!");
-
-		temp_command = find_command(temp_command_name);
-		if(temp_command == NULL) {
-			logit(NSLOG_VERIFICATION_ERROR, TRUE, "Error: Global service event handler command '%s' is not defined anywhere!", temp_command_name);
+		if((ptr = strchr(buf,'!'))!=NULL) *ptr='\0';
+		
+		if((temp_command = find_command(buf)) == NULL) {
+			logit(NSLOG_VERIFICATION_ERROR, TRUE, "Error: Global service event handler command '%s' is not defined anywhere!", buf);
 			errors++;
 			}
-
-		/* save the pointer to the command for later */
-		global_service_event_handler_ptr = temp_command;
-
+		else	/* save the pointer to the command for later */
+			global_service_event_handler_ptr=temp_command;
+		
+		if(ptr!=NULL) *ptr='!';
 		my_free(buf);
 		}
-
 
 	/**************************************************/
 	/* check obsessive processor commands...          */
 	/**************************************************/
 	if(verify_config == TRUE)
 		printf("Checking obsessive compulsive processor commands...\n");
+
 	if(ocsp_command != NULL) {
 
 		buf = (char *)strdup(ocsp_command);
 
 		/* get the command name, leave any arguments behind */
-		temp_command_name = my_strtok(buf, "!");
-
-		temp_command = find_command(temp_command_name);
-		if(temp_command == NULL) {
-			logit(NSLOG_VERIFICATION_ERROR, TRUE, "Error: Obsessive compulsive service processor command '%s' is not defined anywhere!", temp_command_name);
-			errors++;
+		if((ptr = strchr(buf,'!'))!=NULL) *ptr='\0';
+		
+		if((temp_command = find_command(buf)) == NULL) {
+			logit(NSLOG_VERIFICATION_ERROR, TRUE, "Error: Obsessive compulsive service processor command '%s' is not defined anywhere!", buf); errors++;
 			}
+		else    /* save the pointer to the command for later */
+			ochp_command_ptr = temp_command; 
 
-		/* save the pointer to the command for later */
-		ocsp_command_ptr = temp_command;
-
+		if(ptr!=NULL) *ptr='!';
 		my_free(buf);
 		}
-	if(ochp_command != NULL) {
 
+	if(ochp_command != NULL) {
 		buf = (char *)strdup(ochp_command);
 
 		/* get the command name, leave any arguments behind */
-		temp_command_name = my_strtok(buf, "!");
-
-		temp_command = find_command(temp_command_name);
-		if(temp_command == NULL) {
-			logit(NSLOG_VERIFICATION_ERROR, TRUE, "Error: Obsessive compulsive host processor command '%s' is not defined anywhere!", temp_command_name);
-			errors++;
+		if((ptr = strchr(buf,'!'))!=NULL) *ptr='\0';
+		
+		if((temp_command = find_command(buf)) == NULL) {
+			logit(NSLOG_VERIFICATION_ERROR, TRUE, "Error: Obsessive compulsive host processor command '%s' is not defined anywhere!", buf); errors++;
 			}
+		else 	/* save the pointer to the command for later */
+			ochp_command_ptr = temp_command;
 
-		/* save the pointer to the command for later */
-		ochp_command_ptr = temp_command;
-
+		if(ptr!=NULL) *ptr='!';
 		my_free(buf);
 		}
-
 
 	/**************************************************/
 	/* check various settings...                      */
@@ -1661,8 +1626,6 @@ int pre_flight_check(void) {
 	return (errors > 0) ? ERROR : OK;
 	}
 
-
-
 /* do a pre-flight check to make sure object relationships make sense */
 int pre_flight_object_check(int *w, int *e) {
 	contact *temp_contact = NULL;
@@ -1687,12 +1650,11 @@ int pre_flight_object_check(int *w, int *e) {
 	servicedependency *temp_sd = NULL;
 	hostdependency *temp_hd = NULL;
 	char *buf = NULL;
-	char *temp_command_name = "";
+	char *ptr = NULL;
 	int found = FALSE;
 	int total_objects = 0;
 	int warnings = 0;
 	int errors = 0;
-
 
 #ifdef TEST
 	void *ptr = NULL;
@@ -1711,7 +1673,6 @@ int pre_flight_object_check(int *w, int *e) {
 	/* bail out if we aren't supposed to verify object relationships */
 	if(verify_object_relationships == FALSE)
 		return OK;
-
 
 	/*****************************************/
 	/* check each service...                 */
@@ -1750,36 +1711,34 @@ int pre_flight_object_check(int *w, int *e) {
 			buf = (char *)strdup(temp_service->event_handler);
 
 			/* get the command name, leave any arguments behind */
-			temp_command_name = my_strtok(buf, "!");
-
-			temp_command = find_command(temp_command_name);
-			if(temp_command == NULL) {
-				logit(NSLOG_VERIFICATION_ERROR, TRUE, "Error: Event handler command '%s' specified in service '%s' for host '%s' not defined anywhere", temp_command_name, temp_service->description, temp_service->host_name);
+			if((ptr = strchr(buf,'!'))!=NULL) *ptr='\0';
+		
+			if((temp_command = find_command(buf)) == NULL) {
+				logit(NSLOG_VERIFICATION_ERROR, TRUE, "Error: Event handler command '%s' specified in service '%s' for host '%s' not defined anywhere", buf, temp_service->description, temp_service->host_name);
 				errors++;
 				}
+			else	/* save the pointer to the event handler for later */
+				temp_service->event_handler_ptr = temp_command;
 
+			if(ptr!=NULL) *ptr = '!';
 			my_free(buf);
-
-			/* save the pointer to the event handler for later */
-			temp_service->event_handler_ptr = temp_command;
 			}
 
 		/* check the service check_command */
 		buf = (char *)strdup(temp_service->service_check_command);
 
 		/* get the command name, leave any arguments behind */
-		temp_command_name = my_strtok(buf, "!");
-
-		temp_command = find_command(temp_command_name);
-		if(temp_command == NULL) {
-			logit(NSLOG_VERIFICATION_ERROR, TRUE, "Error: Service check command '%s' specified in service '%s' for host '%s' not defined anywhere!", temp_command_name, temp_service->description, temp_service->host_name);
+		if((ptr = strchr(buf,'!'))!=NULL) *ptr='\0';
+		
+		if((temp_command = find_command(buf)) == NULL) {
+			logit(NSLOG_VERIFICATION_ERROR, TRUE, "Error: Service check command '%s' specified in service '%s' for host '%s' not defined anywhere!", buf, temp_service->description, temp_service->host_name);
 			errors++;
 			}
+		else	/* save the pointer to the check command for later */
+			temp_service->check_command_ptr = temp_command;
 
+		if(ptr!=NULL) *ptr='!';
 		my_free(buf);
-
-		/* save the pointer to the check command for later */
-		temp_service->check_command_ptr = temp_command;
 
 		/* check for sane recovery options */
 		if(temp_service->notify_on_recovery == TRUE && temp_service->notify_on_warning == FALSE && temp_service->notify_on_critical == FALSE) {
@@ -1875,8 +1834,6 @@ int pre_flight_object_check(int *w, int *e) {
 	if(verify_config == TRUE)
 		printf("\tChecked %d services.\n", total_objects);
 
-
-
 	/*****************************************/
 	/* check all hosts...                    */
 	/*****************************************/
@@ -1921,18 +1878,17 @@ int pre_flight_object_check(int *w, int *e) {
 			buf = (char *)strdup(temp_host->event_handler);
 
 			/* get the command name, leave any arguments behind */
-			temp_command_name = my_strtok(buf, "!");
-
-			temp_command = find_command(temp_command_name);
-			if(temp_command == NULL) {
-				logit(NSLOG_VERIFICATION_ERROR, TRUE, "Error: Event handler command '%s' specified for host '%s' not defined anywhere", temp_command_name, temp_host->name);
+			if((ptr = strchr(buf,'!'))!=NULL) *ptr='\0';
+		
+			if((temp_command = find_command(buf)) == NULL) {
+				logit(NSLOG_VERIFICATION_ERROR, TRUE, "Error: Event handler command '%s' specified for host '%s' not defined anywhere", buf, temp_host->name);
 				errors++;
 				}
+			else    /* save the pointer to the event handler command for later */
+				temp_host->event_handler_ptr = temp_command;
 
+			if(ptr!=NULL) *ptr='!';
 			my_free(buf);
-
-			/* save the pointer to the event handler command for later */
-			temp_host->event_handler_ptr = temp_command;
 			}
 
 		/* hosts that don't have check commands defined shouldn't ever be checked... */
@@ -1942,17 +1898,16 @@ int pre_flight_object_check(int *w, int *e) {
 			buf = (char *)strdup(temp_host->host_check_command);
 
 			/* get the command name, leave any arguments behind */
-			temp_command_name = my_strtok(buf, "!");
-
-			temp_command = find_command(temp_command_name);
-			if(temp_command == NULL) {
-				logit(NSLOG_VERIFICATION_ERROR, TRUE, "Error: Host check command '%s' specified for host '%s' is not defined anywhere!", temp_command_name, temp_host->name);
+			if((ptr = strchr(buf,'!'))!=NULL) *ptr='\0';
+		
+			if((temp_command = find_command(buf)) == NULL) {
+				logit(NSLOG_VERIFICATION_ERROR, TRUE, "Error: Host check command '%s' specified for host '%s' is not defined anywhere!", buf, temp_host->name);
 				errors++;
 				}
+			else	/* save the pointer to the check command for later */
+				temp_host->check_command_ptr = temp_command;
 
-			/* save the pointer to the check command for later */
-			temp_host->check_command_ptr = temp_command;
-
+			if(ptr!=NULL) *ptr='!';
 			my_free(buf);
 			}
 
@@ -2044,10 +1999,8 @@ int pre_flight_object_check(int *w, int *e) {
 			}
 		}
 
-
 	if(verify_config == TRUE)
 		printf("\tChecked %d hosts.\n", total_objects);
-
 
 	/*****************************************/
 	/* check each host group...              */
@@ -2085,7 +2038,6 @@ int pre_flight_object_check(int *w, int *e) {
 	if(verify_config == TRUE)
 		printf("\tChecked %d host groups.\n", total_objects);
 
-
 	/*****************************************/
 	/* check each service group...           */
 	/*****************************************/
@@ -2122,8 +2074,6 @@ int pre_flight_object_check(int *w, int *e) {
 	if(verify_config == TRUE)
 		printf("\tChecked %d service groups.\n", total_objects);
 
-
-
 	/*****************************************/
 	/* check all contacts...                 */
 	/*****************************************/
@@ -2146,17 +2096,16 @@ int pre_flight_object_check(int *w, int *e) {
 				buf = (char *)strdup(temp_commandsmember->command);
 
 				/* get the command name, leave any arguments behind */
-				temp_command_name = my_strtok(buf, "!");
-
-				temp_command = find_command(temp_command_name);
-				if(temp_command == NULL) {
-					logit(NSLOG_VERIFICATION_ERROR, TRUE, "Error: Service notification command '%s' specified for contact '%s' is not defined anywhere!", temp_command_name, temp_contact->name);
+				if((ptr = strchr(buf,'!'))!=NULL) *ptr='\0';
+		
+				if((temp_command = find_command(buf)) == NULL) {
+					logit(NSLOG_VERIFICATION_ERROR, TRUE, "Error: Service notification command '%s' specified for contact '%s' is not defined anywhere!", buf, temp_contact->name);
 					errors++;
 					}
-
-				/* save pointer to the command for later */
-				temp_commandsmember->command_ptr = temp_command;
-
+				else
+					temp_commandsmember->command_ptr = temp_command;
+				
+				if(ptr != NULL) *ptr='!';
 				my_free(buf);
 				}
 
@@ -2171,17 +2120,16 @@ int pre_flight_object_check(int *w, int *e) {
 				buf = (char *)strdup(temp_commandsmember->command);
 
 				/* get the command name, leave any arguments behind */
-				temp_command_name = my_strtok(buf, "!");
-
-				temp_command = find_command(temp_command_name);
-				if(temp_command == NULL) {
-					logit(NSLOG_VERIFICATION_ERROR, TRUE, "Error: Host notification command '%s' specified for contact '%s' is not defined anywhere!", temp_command_name, temp_contact->name);
+				if((ptr = strchr(buf,'!'))!=NULL) *ptr='\0';
+		
+				if((temp_command = find_command(buf)) == NULL) {
+					logit(NSLOG_VERIFICATION_ERROR, TRUE, "Error: Host notification command '%s' specified for contact '%s' is not defined anywhere!", buf, temp_contact->name);
 					errors++;
 					}
-
-				/* save pointer to the command for later */
-				temp_commandsmember->command_ptr = temp_command;
-
+				else	/* save pointer to the command for later */
+					temp_commandsmember->command_ptr = temp_command;
+				
+				if(ptr!=NULL) *ptr='!';
 				my_free(buf);
 				}
 
@@ -2243,8 +2191,6 @@ int pre_flight_object_check(int *w, int *e) {
 	if(verify_config == TRUE)
 		printf("\tChecked %d contacts.\n", total_objects);
 
-
-
 	/*****************************************/
 	/* check each contact group...           */
 	/*****************************************/
@@ -2282,8 +2228,6 @@ int pre_flight_object_check(int *w, int *e) {
 
 	if(verify_config == TRUE)
 		printf("\tChecked %d contact groups.\n", total_objects);
-
-
 
 	/*****************************************/
 	/* check all service escalations...     */
@@ -2347,8 +2291,6 @@ int pre_flight_object_check(int *w, int *e) {
 	if(verify_config == TRUE)
 		printf("\tChecked %d service escalations.\n", total_objects);
 
-
-
 	/*****************************************/
 	/* check all service dependencies...     */
 	/*****************************************/
@@ -2398,8 +2340,6 @@ int pre_flight_object_check(int *w, int *e) {
 
 	if(verify_config == TRUE)
 		printf("\tChecked %d service dependencies.\n", total_objects);
-
-
 
 	/*****************************************/
 	/* check all host escalations...     */
@@ -2463,8 +2403,6 @@ int pre_flight_object_check(int *w, int *e) {
 	if(verify_config == TRUE)
 		printf("\tChecked %d host escalations.\n", total_objects);
 
-
-
 	/*****************************************/
 	/* check all host dependencies...     */
 	/*****************************************/
@@ -2515,8 +2453,6 @@ int pre_flight_object_check(int *w, int *e) {
 	if(verify_config == TRUE)
 		printf("\tChecked %d host dependencies.\n", total_objects);
 
-
-
 	/*****************************************/
 	/* check all commands...                 */
 	/*****************************************/
@@ -2536,8 +2472,6 @@ int pre_flight_object_check(int *w, int *e) {
 
 	if(verify_config == TRUE)
 		printf("\tChecked %d commands.\n", total_objects);
-
-
 
 	/*****************************************/
 	/* check all timeperiods...              */
@@ -2571,8 +2505,6 @@ int pre_flight_object_check(int *w, int *e) {
 
 	if(verify_config == TRUE)
 		printf("\tChecked %d time periods.\n", total_objects);
-
-
 
 	/* update warning and error count */
 	*w += warnings;
@@ -2646,7 +2578,6 @@ static int dfs_host_path(host *root) {
 	return dfs_get_status(root);
 	}
 
-
 /* check for circular paths and dependencies */
 int pre_flight_circular_check(int *w, int *e) {
 	host *temp_host = NULL;
@@ -2658,11 +2589,9 @@ int pre_flight_circular_check(int *w, int *e) {
 	int warnings = 0;
 	int errors = 0;
 
-
 	/* bail out if we aren't supposed to verify circular paths */
 	if(verify_circular_paths == FALSE)
 		return OK;
-
 
 	/********************************************/
 	/* check for circular paths between hosts   */
@@ -2689,7 +2618,6 @@ int pre_flight_circular_check(int *w, int *e) {
 		/* clean DFS status */
 		dfs_set_status(temp_host, DFS_UNCHECKED);
 		}
-
 
 	/********************************************/
 	/* check for circular dependencies         */
@@ -2753,11 +2681,9 @@ int pre_flight_circular_check(int *w, int *e) {
 			}
 		}
 
-
 	/* update warning and error count */
 	*w += warnings;
 	*e += errors;
 
 	return (errors > 0) ? ERROR : OK;
 	}
-

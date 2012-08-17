@@ -3,7 +3,7 @@
  * BROKER.C - Event broker routines for Nagios
  *
  * Copyright (c) 2010-2012 Nagios Core Development Team
- * Copyright (c) 2002-2006 Ethan Galstad (egalstad@nagios.org)
+ * Copyright (c) 2002-2009 Ethan Galstad (egalstad@nagios.org)
  * Last Modified: 08-12-2012 [WL]
  *
  * License:
@@ -176,7 +176,6 @@ void broker_system_command(int type, int flags, int attr, struct timeval start_t
 int broker_event_handler(int type, int flags, int attr, int eventhandler_type, void *data, int state, int state_type, struct timeval start_time, struct timeval end_time, double exectime, int timeout, int early_timeout, int retcode, char *cmd, char *cmdline, char *output, struct timeval *timestamp) {
 	service *temp_service = NULL;
 	host *temp_host = NULL;
-	char *command_buf = NULL;
 	char *command_name = NULL;
 	char *command_args = NULL;
 	nebstruct_event_handler_data ds;
@@ -189,16 +188,8 @@ int broker_event_handler(int type, int flags, int attr, int eventhandler_type, v
 		return ERROR;
 
 	/* get command name/args */
-	if(cmd != NULL) {
-		if ((command_buf=strchr(cmd,'!'))!=NULL) {
-			command_name = (char *) strndup(cmd,(command_buf-cmd));
-			command_buf++;
-			command_args = (char *) strdup(command_buf);
-			}
-		else {
-			command_name = (char *) strdup(cmd); 
-			}
-		}
+	if(cmd != NULL) 
+		my_str2parts(cmd,'!',&command_name,&command_args);
 
 	/* fill struct with relevant data */
 	ds.type = type;
@@ -242,7 +233,6 @@ int broker_event_handler(int type, int flags, int attr, int eventhandler_type, v
 
 /* send host check data to broker */
 int broker_host_check(int type, int flags, int attr, host *hst, int check_type, int state, int state_type, struct timeval start_time, struct timeval end_time, char *cmd, double latency, double exectime, int timeout, int early_timeout, int retcode, char *cmdline, char *output, char *long_output, char *perfdata, char *saveddata, struct timeval *timestamp) {
-	char *command_buf = NULL;
 	char *command_name = NULL;
 	char *command_args = NULL;
 	nebstruct_host_check_data ds;
@@ -255,16 +245,8 @@ int broker_host_check(int type, int flags, int attr, host *hst, int check_type, 
 		return ERROR;
 
         /* get command name/args */
-	if(cmd != NULL) {
-		if ((command_buf=strchr(cmd,'!'))!=NULL) {
-			command_name = (char *) strndup(cmd,(command_buf-cmd));
-			command_buf++;
-			command_args = (char *) strdup(command_buf);
-			}
-		else {
-			command_name = (char *) strdup(cmd);
-			}
-		}
+	if(cmd != NULL)
+		my_str2parts(cmd,'!',&command_name,&command_args);
 
 	/* fill struct with relevant data */
 	ds.type = type;
@@ -304,7 +286,6 @@ int broker_host_check(int type, int flags, int attr, host *hst, int check_type, 
 
 /* send service check data to broker */
 int broker_service_check(int type, int flags, int attr, service *svc, int check_type, struct timeval start_time, struct timeval end_time, char *cmd, double latency, double exectime, int timeout, int early_timeout, int retcode, char *cmdline, struct timeval *timestamp) {
-	char *command_buf = NULL;
 	char *command_name = NULL;
 	char *command_args = NULL;
 	nebstruct_service_check_data ds;
@@ -317,16 +298,8 @@ int broker_service_check(int type, int flags, int attr, service *svc, int check_
 		return ERROR;
 
 	/* get command name/args */
-	if(cmd != NULL) {
-		 if ((command_buf=strchr(cmd,'!'))!=NULL) {
-			command_name = (char *) strndup(cmd,(command_buf-cmd));
-			command_buf++;
-			command_args = (char *) strdup(command_buf);
-			}
-		else {
-			command_name = (char *) strdup(cmd);
-			}
-		}
+	if(cmd != NULL)
+		my_str2parts(cmd,'!',&command_name,&command_args);
 
 	/* fill struct with relevant data */
 	ds.type = type;
@@ -689,7 +662,6 @@ int broker_contact_notification_method_data(int type, int flags, int attr, int n
 	nebstruct_contact_notification_method_data ds;
 	host *temp_host = NULL;
 	service *temp_service = NULL;
-	char *command_buf = NULL;
 	char *command_name = NULL;
 	char *command_args = NULL;
 	int return_code = OK;
@@ -698,16 +670,8 @@ int broker_contact_notification_method_data(int type, int flags, int attr, int n
 		return return_code;
 
 	/* get command name/args */
-	if(cmd != NULL) {
-		if ((command_buf=strchr(cmd,'!'))!=NULL) {
-			command_name = (char *) strndup(cmd,(command_buf-cmd));
-			command_buf++;
-			command_args = (char *) strdup(command_buf);
-			}
-		else {
-			command_name = (char *) strdup(cmd);
-			}
-		}
+	if(cmd != NULL)
+		my_str2parts(cmd,'!',&command_name,&command_args);
 
 	/* fill struct with relevant data */
 	ds.type = type;

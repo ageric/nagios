@@ -7,6 +7,38 @@
  */
 extern int date_format;
 
+/* This is a replacement for common strtok usage when string needs to
+ * be separated into two parts (i.e. like variable=value common example)
+ * Second part will end with new line if its in the string.
+ *
+ * Arguments are:
+ *   input - input string
+ *   separator - separator character 
+ *   part1 - pointer to char* where part1 would be put (created with strdup)
+ *   part2 - pointer to char* where part2 would be put (created with strdup)
+ * Returns:
+ *   1 - successfully parsed the string
+ *   0 - could not find separator or null-size variale or value
+ */
+int my_str2parts(const char* input, char separator, char** part1, char** part2) {
+	char* ptr1;
+	char* ptr2;
+
+	if (input==NULL || (ptr1=strchr(input,separator))==NULL)
+		return 0;
+
+	*part1 = (char*)strndup(input,(ptr1-input));
+	ptr1++;
+	
+	if ((ptr2=strchr(ptr1,'\n'))!=NULL)
+		*part2 = (char*)strndup(ptr1,(ptr2-ptr1));
+	else
+		*part2 = (char*)strdup(ptr1);
+
+	if (*part1=='\0' || *part2=='\0') return 0;
+	return 1;
+	}
+
 /* fix the problem with strtok() skipping empty options between tokens */
 char *my_strtok(char *buffer, char *tokens) {
 	char *token_position = NULL;
@@ -339,7 +371,7 @@ void strip(char *buffer) {
 /* dual hash function */
 int hashfunc(const char *name1, const char *name2, int hashslots) {
 	unsigned int result;
-	char* p;
+	const char* p;
 
 	result = 0;
 
