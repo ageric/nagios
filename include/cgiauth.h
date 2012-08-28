@@ -2,7 +2,6 @@
  *
  * CGIAUTH.H - Authorization utilities header file
  *
- * Last Modified:   11-24-2005
  *
  * License:
  *
@@ -23,7 +22,6 @@
 
 #ifndef _AUTH_H
 #define _AUTH_H
-#include "compat.h"
 #include "common.h"
 #include "objects.h"
 

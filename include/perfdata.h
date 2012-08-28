@@ -2,8 +2,6 @@
  *
  * PERFDATA.H - Include file for performance data routines
  *
- * Copyright (c) 2001-2005 Ethan Galstad (egalstad@nagios.org)
- * Last Modified:   11-25-2005
  *
  * License:
  *
@@ -25,7 +23,7 @@
 #ifndef _PERFDATA_H
 #define _PERFDATA_H
 
-#include "compat.h"
+#include "common.h"
 #include "objects.h"
 
 NAGIOS_BEGIN_DECL

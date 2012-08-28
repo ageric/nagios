@@ -2,8 +2,6 @@
  *
  * XODTEMPLATE.H - Template-based object configuration data header file
  *
- * Copyright (c) 2001-2008 Ethan Galstad (egalstad@nagios.org)
- * Last Modified:   02-17-2008
  *
  * License:
  *
@@ -57,22 +55,9 @@
 
 /***************** SKIP LISTS ****************/
 
-#define NUM_XOBJECT_SKIPLISTS                  15
-
-#define X_HOST_SKIPLIST                        1
-#define X_SERVICE_SKIPLIST                     2
-#define X_COMMAND_SKIPLIST                     3
-#define X_TIMEPERIOD_SKIPLIST                  4
-#define X_CONTACT_SKIPLIST                     5
-#define X_CONTACTGROUP_SKIPLIST                6
-#define X_HOSTGROUP_SKIPLIST                   7
-#define X_SERVICEGROUP_SKIPLIST                8
-#define X_HOSTDEPENDENCY_SKIPLIST              9
-#define X_SERVICEDEPENDENCY_SKIPLIST           10
-#define X_HOSTESCALATION_SKIPLIST              11
-#define X_SERVICEESCALATION_SKIPLIST           12
-#define X_HOSTEXTINFO_SKIPLIST                 13
-#define X_SERVICEEXTINFO_SKIPLIST              14
+#define HOSTEXTINFO_SKIPLIST                 (NUM_OBJECT_SKIPLISTS)
+#define SERVICEEXTINFO_SKIPLIST              (NUM_OBJECT_SKIPLISTS + 1)
+#define NUM_XOBJECT_SKIPLISTS                (NUM_OBJECT_SKIPLISTS + 2)
 
 
 /********** STRUCTURE DEFINITIONS **********/
@@ -937,7 +922,6 @@ int xodtemplate_register_hostescalation(xodtemplate_hostescalation *);
 int xodtemplate_init_xobject_skiplists(void);
 int xodtemplate_free_xobject_skiplists(void);
 
-int xodtemplate_skiplist_compare_text(const char *val1a, const char *val1b, const char *val2a, const char *val2b);
 int xodtemplate_skiplist_compare_host_template(void *a, void *b);
 int xodtemplate_skiplist_compare_service_template(void *a, void *b);
 int xodtemplate_skiplist_compare_command_template(void *a, void *b);

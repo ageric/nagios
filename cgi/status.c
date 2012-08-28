@@ -2,8 +2,6 @@
  *
  * STATUS.C -  Nagios Status CGI
  *
- * Copyright (c) 1999-2010  Ethan Galstad (egalstad@nagios.org)
- * Last Modified: 08-05-2020
  *
  * License:
  *
@@ -59,10 +57,6 @@ extern int suppress_alert_window;
 
 extern int enable_splunk_integration;
 
-extern host *host_list;
-extern service *service_list;
-extern hostgroup *hostgroup_list;
-extern servicegroup *servicegroup_list;
 extern hoststatus *hoststatus_list;
 extern servicestatus *servicestatus_list;
 

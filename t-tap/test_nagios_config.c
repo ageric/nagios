@@ -4,11 +4,8 @@
  *
  * Program: Nagios Core Testing
  * License: GPL
- * Copyright (c) 2009 Nagios Core Development Team and Community Contributors
- * Copyright (c) 1999-2009 Ethan Galstad
  *
  * First Written:   10-08-2009, based on nagios.c
- * Last Modified:   10-08-2009
  *
  * Description:
  *
@@ -226,13 +223,6 @@ int             command_file_created = FALSE;
 unsigned long   update_uid = 0L;
 
 
-extern contact	       *contact_list;
-extern contactgroup    *contactgroup_list;
-extern hostgroup       *hostgroup_list;
-extern command         *command_list;
-extern timeperiod      *timeperiod_list;
-extern serviceescalation *serviceescalation_list;
-extern host 		*host_list;
 extern char	*xrddefault_retention_file;
 
 notification    *notification_list;

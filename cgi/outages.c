@@ -2,8 +2,6 @@
  *
  * OUTAGES.C -  Nagios Network Outages CGI
  *
- * Copyright (c) 1999-2008 Ethan Galstad (egalstad@nagios.org)
- * Last Modified: 01-08-2008
  *
  * License:
  *
@@ -34,8 +32,6 @@
 extern int              refresh_rate;
 extern time_t		program_start;
 
-extern host *host_list;
-extern service *service_list;
 extern hoststatus *hoststatus_list;
 extern servicestatus *servicestatus_list;
 

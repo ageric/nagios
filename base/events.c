@@ -2,8 +2,6 @@
  *
  * EVENTS.C - Timed event functions for Nagios
  *
- * Copyright (c) 1999-2010 Ethan Galstad (egalstad@nagios.org)
- * Last Modified: 08-28-2010
  *
  * License:
  *
@@ -76,9 +74,6 @@ extern int      execute_host_checks;
 extern int      time_change_threshold;
 
 squeue_t *nagios_squeue = NULL; /* our scheduling queue */
-
-extern host     *host_list;
-extern service  *service_list;
 
 sched_info scheduling_info;
 extern iobroker_set *nagios_iobs;
@@ -1004,25 +999,21 @@ int event_execution_loop(void) {
 		last_event = temp_event;
 
 		gettimeofday(&now, NULL);
-		poll_time_ms = tv_delta_msec(&now, event_runtime);
-		if (poll_time_ms <= 0) {
-			log_debug_info(DEBUGL_SCHEDULING, 1, "poll_time_ms is ACTUALLY %d; run_time - time(NULL) = (%lu - %lu) = %d\n",
-						   poll_time_ms, temp_event->run_time, time(NULL), (int)(temp_event->run_time - time(NULL)));
-			log_debug_info(DEBUGL_SCHEDULING, 1, "Daemon runtime: %lu\n",
-						   time(NULL) - program_start);
+		poll_time_ms = tv_delta_msec(&now, event_runtime) - 25;
+		if (poll_time_ms < 0)
 			poll_time_ms = 0;
-		}
-		if (poll_time_ms >= 1500)
+		else if(poll_time_ms >= 1500)
 			poll_time_ms = 1500;
-		/* turn this to DEBUGL_IPC later */
+
 		log_debug_info(DEBUGL_SCHEDULING | DEBUGL_IPC, 1, "## Polling %dms; sockets=%d; events=%u; iobs=%p\n",
-					   poll_time_ms, iobroker_get_num_fds(nagios_iobs),
-					   squeue_size(nagios_squeue), nagios_iobs);
+		               poll_time_ms, iobroker_get_num_fds(nagios_iobs),
+		               squeue_size(nagios_squeue), nagios_iobs);
 		inputs = iobroker_poll(nagios_iobs, poll_time_ms);
 		log_debug_info(DEBUGL_IPC, 2, "## %d descriptors had input\n", inputs);
 
-		/* if it's not time to run this event yet, we go back to listening */
-		if (temp_event->run_time > time(NULL))
+		/* 100 milliseconds allowance for firing off events early */
+		gettimeofday(&now, NULL);
+		if (tv_delta_msec(&now, event_runtime) > 100)
 			continue;
 
 		/*
@@ -1060,7 +1051,8 @@ int handle_timed_event(timed_event *event) {
 	service *temp_service = NULL;
 	void (*userfunc)(void *);
 	struct timeval tv;
-	double latency = 0.0;
+	const struct timeval *event_runtime;
+	double latency;
 
 
 	log_debug_info(DEBUGL_FUNCTIONS, 0, "handle_timed_event() start\n");
@@ -1072,16 +1064,19 @@ int handle_timed_event(timed_event *event) {
 
 	log_debug_info(DEBUGL_EVENTS, 0, "** Timed Event ** Type: %d, Run Time: %s", event->event_type, ctime(&event->run_time));
 
+	/* get event latency */
+	gettimeofday(&tv, NULL);
+	event_runtime = squeue_event_runtime(event->sq_event);
+	latency = (double)(tv_delta_f(&tv, event_runtime));
+	if (latency < 0.0) /* events may run up to 0.1 seconds early */
+		latency = 0.0;
+
 	/* how should we handle the event? */
 	switch(event->event_type) {
 
 		case EVENT_SERVICE_CHECK:
 
 			temp_service = (service *)event->event_data;
-
-			/* get check latency */
-			gettimeofday(&tv, NULL);
-			latency = (double)((double)(tv.tv_sec - event->run_time) + (double)(tv.tv_usec / 1000) / 1000.0);
 
 			log_debug_info(DEBUGL_EVENTS, 0, "** Service Check Event ==> Host: '%s', Service: '%s', Options: %d, Latency: %f sec\n", temp_service->host_name, temp_service->description, event->event_options, latency);
 
@@ -1094,10 +1089,6 @@ int handle_timed_event(timed_event *event) {
 
 			temp_host = (host *)event->event_data;
 
-			/* get check latency */
-			gettimeofday(&tv, NULL);
-			latency = (double)((double)(tv.tv_sec - event->run_time) + (double)(tv.tv_usec / 1000) / 1000.0);
-
 			log_debug_info(DEBUGL_EVENTS, 0, "** Host Check Event ==> Host: '%s', Options: %d, Latency: %f sec\n", temp_host->name, event->event_options, latency);
 
 			/* run the host check */
@@ -1107,7 +1098,7 @@ int handle_timed_event(timed_event *event) {
 
 		case EVENT_LOG_ROTATION:
 
-			log_debug_info(DEBUGL_EVENTS, 0, "** Log File Rotation Event\n");
+			log_debug_info(DEBUGL_EVENTS, 0, "** Log File Rotation Event. Latency: %.3fs\n", latency);
 
 			/* rotate the log file */
 			rotate_log_file(event->run_time);
@@ -1115,7 +1106,7 @@ int handle_timed_event(timed_event *event) {
 
 		case EVENT_PROGRAM_SHUTDOWN:
 
-			log_debug_info(DEBUGL_EVENTS, 0, "** Program Shutdown Event\n");
+			log_debug_info(DEBUGL_EVENTS, 0, "** Program Shutdown Event. Latency: %.3fs\n", latency);
 
 			/* set the shutdown flag */
 			sigshutdown = TRUE;
@@ -1126,7 +1117,7 @@ int handle_timed_event(timed_event *event) {
 
 		case EVENT_PROGRAM_RESTART:
 
-			log_debug_info(DEBUGL_EVENTS, 0, "** Program Restart Event\n");
+			log_debug_info(DEBUGL_EVENTS, 0, "** Program Restart Event. Latency: %.3fs\n", latency);
 
 			/* set the restart flag */
 			sigrestart = TRUE;
@@ -1137,7 +1128,7 @@ int handle_timed_event(timed_event *event) {
 
 		case EVENT_CHECK_REAPER:
 
-			log_debug_info(DEBUGL_EVENTS, 0, "** Check Result Reaper\n");
+			log_debug_info(DEBUGL_EVENTS, 0, "** Check Result Reaper. Latency: %.3fs\n", latency);
 
 			/* reap host and service check results */
 			reap_check_results();
@@ -1145,7 +1136,7 @@ int handle_timed_event(timed_event *event) {
 
 		case EVENT_ORPHAN_CHECK:
 
-			log_debug_info(DEBUGL_EVENTS, 0, "** Orphaned Host and Service Check Event\n");
+			log_debug_info(DEBUGL_EVENTS, 0, "** Orphaned Host and Service Check Event. Latency: %.3fs\n", latency);
 
 			/* check for orphaned hosts and services */
 			if(check_orphaned_hosts == TRUE)
@@ -1156,7 +1147,7 @@ int handle_timed_event(timed_event *event) {
 
 		case EVENT_RETENTION_SAVE:
 
-			log_debug_info(DEBUGL_EVENTS, 0, "** Retention Data Save Event\n");
+			log_debug_info(DEBUGL_EVENTS, 0, "** Retention Data Save Event. Latency: %.3fs\n", latency);
 
 			/* save state retention data */
 			save_state_information(TRUE);
@@ -1164,7 +1155,7 @@ int handle_timed_event(timed_event *event) {
 
 		case EVENT_STATUS_SAVE:
 
-			log_debug_info(DEBUGL_EVENTS, 0, "** Status Data Save Event\n");
+			log_debug_info(DEBUGL_EVENTS, 0, "** Status Data Save Event. Latency: %.3fs\n", latency);
 
 			/* save all status data (program, host, and service) */
 			update_all_status_data();
@@ -1172,7 +1163,7 @@ int handle_timed_event(timed_event *event) {
 
 		case EVENT_SCHEDULED_DOWNTIME:
 
-			log_debug_info(DEBUGL_EVENTS, 0, "** Scheduled Downtime Event\n");
+			log_debug_info(DEBUGL_EVENTS, 0, "** Scheduled Downtime Event. Latency: %.3fs\n", latency);
 
 			/* process scheduled downtime info */
 			if(event->event_data) {
@@ -1184,7 +1175,7 @@ int handle_timed_event(timed_event *event) {
 
 		case EVENT_SFRESHNESS_CHECK:
 
-			log_debug_info(DEBUGL_EVENTS, 0, "** Service Result Freshness Check Event\n");
+			log_debug_info(DEBUGL_EVENTS, 0, "** Service Result Freshness Check Event. Latency: %.3fs\n", latency);
 
 			/* check service result freshness */
 			check_service_result_freshness();
@@ -1192,7 +1183,7 @@ int handle_timed_event(timed_event *event) {
 
 		case EVENT_HFRESHNESS_CHECK:
 
-			log_debug_info(DEBUGL_EVENTS, 0, "** Host Result Freshness Check Event\n");
+			log_debug_info(DEBUGL_EVENTS, 0, "** Host Result Freshness Check Event. Latency: %.3fs\n", latency);
 
 			/* check host result freshness */
 			check_host_result_freshness();
@@ -1200,7 +1191,7 @@ int handle_timed_event(timed_event *event) {
 
 		case EVENT_EXPIRE_DOWNTIME:
 
-			log_debug_info(DEBUGL_EVENTS, 0, "** Expire Downtime Event\n");
+			log_debug_info(DEBUGL_EVENTS, 0, "** Expire Downtime Event. Latency: %.3fs\n", latency);
 
 			/* check for expired scheduled downtime entries */
 			check_for_expired_downtime();
@@ -1209,14 +1200,14 @@ int handle_timed_event(timed_event *event) {
 		case EVENT_RESCHEDULE_CHECKS:
 
 			/* adjust scheduling of host and service checks */
-			log_debug_info(DEBUGL_EVENTS, 0, "** Reschedule Checks Event\n");
+			log_debug_info(DEBUGL_EVENTS, 0, "** Reschedule Checks Event. Latency: %.3fs\n", latency);
 
 			adjust_check_scheduling();
 			break;
 
 		case EVENT_EXPIRE_COMMENT:
 
-			log_debug_info(DEBUGL_EVENTS, 0, "** Expire Comment Event\n");
+			log_debug_info(DEBUGL_EVENTS, 0, "** Expire Comment Event. Latency: %.3fs\n", latency);
 
 			/* check for expired comment */
 			check_for_expired_comment((unsigned long)event->event_data);
@@ -1224,7 +1215,7 @@ int handle_timed_event(timed_event *event) {
 
 		case EVENT_CHECK_PROGRAM_UPDATE:
 
-			log_debug_info(DEBUGL_EVENTS, 0, "** Check For Program Update\n");
+			log_debug_info(DEBUGL_EVENTS, 0, "** Check For Program Update. Latency: %.3fs\n", latency);
 
 			/* check for new versions of Nagios */
 			check_for_nagios_updates(FALSE, TRUE);
@@ -1232,7 +1223,7 @@ int handle_timed_event(timed_event *event) {
 
 		case EVENT_USER_FUNCTION:
 
-			log_debug_info(DEBUGL_EVENTS, 0, "** User Function Event\n");
+			log_debug_info(DEBUGL_EVENTS, 0, "** User Function Event. Latency: %.3fs\n", latency);
 
 			/* run a user-defined function */
 			if(event->event_data != NULL) {

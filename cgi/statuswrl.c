@@ -2,8 +2,6 @@
  *
  * STATUSWRL.C - Nagios 3-D (VRML) Network Status View
  *
- * Copyright (c) 1999-2007 Ethan Galstad (egalstad@nagios.org)
- * Last Modified:   07-16-2007
  *
  * Description:
  *
@@ -42,9 +40,6 @@ extern char url_images_path[MAX_FILENAME_LENGTH];
 extern char url_logo_images_path[MAX_FILENAME_LENGTH];
 
 extern char *statuswrl_include;
-
-extern host *host_list;
-extern service *service_list;
 
 extern int default_statuswrl_layout_method;
 

@@ -2,8 +2,6 @@
  *
  * OBJECTS.C - Object addition and search functions for Nagios
  *
- * Copyright (c) 1999-2008 Ethan Galstad (egalstad@nagios.org)
- * Last Modified: 11-30-2008
  *
  * License:
  *
@@ -25,7 +23,6 @@
 #include "../include/config.h"
 #include "../include/common.h"
 #include "../include/objects.h"
-#include "../include/skiplist.h"
 
 #ifdef NSCORE
 #include "../include/nagios.h"
@@ -42,21 +39,28 @@
 #endif
 
 
-host            *host_list = NULL, *host_list_tail = NULL;
-service         *service_list = NULL, *service_list_tail = NULL;
-contact		*contact_list = NULL, *contact_list_tail = NULL;
-contactgroup	*contactgroup_list = NULL, *contactgroup_list_tail = NULL;
-hostgroup	*hostgroup_list = NULL, *hostgroup_list_tail = NULL;
-servicegroup    *servicegroup_list = NULL, *servicegroup_list_tail = NULL;
-command         *command_list = NULL, *command_list_tail = NULL;
-timeperiod      *timeperiod_list = NULL, *timeperiod_list_tail = NULL;
-serviceescalation *serviceescalation_list = NULL, *serviceescalation_list_tail = NULL;
-servicedependency *servicedependency_list = NULL, *servicedependency_list_tail = NULL;
-hostdependency  *hostdependency_list = NULL, *hostdependency_list_tail = NULL;
-hostescalation  *hostescalation_list = NULL, *hostescalation_list_tail = NULL;
+/*
+ * These get created in xdata/xodtemplate.c:xodtemplate_register_objects()
+ * Escalations are attached to the objects they belong to.
+ * Dependencies are attached to the dependent end of the object chain.
+ */
+dkhash_table *object_hash_tables[NUM_OBJECT_SKIPLISTS];
 
-skiplist *object_skiplists[NUM_OBJECT_SKIPLISTS];
+command *command_list = NULL;
+timeperiod *timeperiod_list = NULL;
+host *host_list = NULL;
+service *service_list = NULL;
+contact *contact_list = NULL;
+hostgroup *hostgroup_list = NULL;
+servicegroup *servicegroup_list = NULL;
+contactgroup *contactgroup_list = NULL;
+hostescalation *hostescalation_list = NULL;
+hostdependency *hostdependency_list = NULL;
+serviceescalation *serviceescalation_list = NULL;
+servicedependency *servicedependency_list = NULL;
 
+
+struct object_count num_objects;
 
 #ifdef NSCORE
 int __nagios_object_structure_version = CURRENT_OBJECT_STRUCTURE_VERSION;
@@ -72,9 +76,6 @@ int __nagios_object_structure_version = CURRENT_OBJECT_STRUCTURE_VERSION;
 /* read all host configuration data from external source */
 int read_object_config_data(char *main_config_file, int options, int cache, int precache) {
 	int result = OK;
-
-	/* initialize object skiplists */
-	init_object_skiplists();
 
 	/********* IMPLEMENTATION-SPECIFIC INPUT FUNCTION ********/
 #ifdef USE_XODTEMPLATE
@@ -92,41 +93,6 @@ int read_object_config_data(char *main_config_file, int options, int cache, int 
 /******************************************************************/
 /******************** SKIPLIST FUNCTIONS **************************/
 /******************************************************************/
-
-int init_object_skiplists(void) {
-	int x = 0;
-
-	for(x = 0; x < NUM_OBJECT_SKIPLISTS; x++)
-		object_skiplists[x] = NULL;
-
-	object_skiplists[HOST_SKIPLIST] = skiplist_new(15, 0.5, FALSE, FALSE, skiplist_compare_host);
-	object_skiplists[SERVICE_SKIPLIST] = skiplist_new(15, 0.5, FALSE, FALSE, skiplist_compare_service);
-
-	object_skiplists[COMMAND_SKIPLIST] = skiplist_new(10, 0.5, FALSE, FALSE, skiplist_compare_command);
-	object_skiplists[TIMEPERIOD_SKIPLIST] = skiplist_new(10, 0.5, FALSE, FALSE, skiplist_compare_timeperiod);
-	object_skiplists[CONTACT_SKIPLIST] = skiplist_new(10, 0.5, FALSE, FALSE, skiplist_compare_contact);
-	object_skiplists[CONTACTGROUP_SKIPLIST] = skiplist_new(10, 0.5, FALSE, FALSE, skiplist_compare_contactgroup);
-	object_skiplists[HOSTGROUP_SKIPLIST] = skiplist_new(10, 0.5, FALSE, FALSE, skiplist_compare_hostgroup);
-	object_skiplists[SERVICEGROUP_SKIPLIST] = skiplist_new(10, 0.5, FALSE, FALSE, skiplist_compare_servicegroup);
-
-	object_skiplists[HOSTESCALATION_SKIPLIST] = skiplist_new(15, 0.5, TRUE, FALSE, skiplist_compare_hostescalation);
-	object_skiplists[SERVICEESCALATION_SKIPLIST] = skiplist_new(15, 0.5, TRUE, FALSE, skiplist_compare_serviceescalation);
-	object_skiplists[HOSTDEPENDENCY_SKIPLIST] = skiplist_new(15, 0.5, TRUE, FALSE, skiplist_compare_hostdependency);
-	object_skiplists[SERVICEDEPENDENCY_SKIPLIST] = skiplist_new(15, 0.5, TRUE, FALSE, skiplist_compare_servicedependency);
-
-	return OK;
-	}
-
-
-
-int free_object_skiplists(void) {
-	int x = 0;
-
-	for(x = 0; x < NUM_OBJECT_SKIPLISTS; x++)
-		skiplist_free(&object_skiplists[x]);
-
-	return OK;
-	}
 
 
 int skiplist_compare_text(const char *val1a, const char *val1b, const char *val2a, const char *val2b) {
@@ -158,237 +124,13 @@ int skiplist_compare_text(const char *val1a, const char *val1b, const char *val2
 	}
 
 
-int skiplist_compare_host(void *a, void *b) {
-	host *oa = NULL;
-	host *ob = NULL;
-
-	oa = (host *)a;
-	ob = (host *)b;
-
-	if(oa == NULL && ob == NULL)
-		return 0;
-	if(oa == NULL)
-		return 1;
-	if(ob == NULL)
-		return -1;
-
-	return skiplist_compare_text(oa->name, NULL, ob->name, NULL);
-	}
-
-
-int skiplist_compare_service(void *a, void *b) {
-	service *oa = NULL;
-	service *ob = NULL;
-
-	oa = (service *)a;
-	ob = (service *)b;
-
-	if(oa == NULL && ob == NULL)
-		return 0;
-	if(oa == NULL)
-		return 1;
-	if(ob == NULL)
-		return -1;
-
-	return skiplist_compare_text(oa->host_name, oa->description, ob->host_name, ob->description);
-	}
-
-
-int skiplist_compare_command(void *a, void *b) {
-	command *oa = NULL;
-	command *ob = NULL;
-
-	oa = (command *)a;
-	ob = (command *)b;
-
-	if(oa == NULL && ob == NULL)
-		return 0;
-	if(oa == NULL)
-		return 1;
-	if(ob == NULL)
-		return -1;
-
-	return skiplist_compare_text(oa->name, NULL, ob->name, NULL);
-	}
-
-
-int skiplist_compare_timeperiod(void *a, void *b) {
-	timeperiod *oa = NULL;
-	timeperiod *ob = NULL;
-
-	oa = (timeperiod *)a;
-	ob = (timeperiod *)b;
-
-	if(oa == NULL && ob == NULL)
-		return 0;
-	if(oa == NULL)
-		return 1;
-	if(ob == NULL)
-		return -1;
-
-	return skiplist_compare_text(oa->name, NULL, ob->name, NULL);
-	}
-
-
-int skiplist_compare_contact(void *a, void *b) {
-	contact *oa = NULL;
-	contact *ob = NULL;
-
-	oa = (contact *)a;
-	ob = (contact *)b;
-
-	if(oa == NULL && ob == NULL)
-		return 0;
-	if(oa == NULL)
-		return 1;
-	if(ob == NULL)
-		return -1;
-
-	return skiplist_compare_text(oa->name, NULL, ob->name, NULL);
-	}
-
-
-int skiplist_compare_contactgroup(void *a, void *b) {
-	contactgroup *oa = NULL;
-	contactgroup *ob = NULL;
-
-	oa = (contactgroup *)a;
-	ob = (contactgroup *)b;
-
-	if(oa == NULL && ob == NULL)
-		return 0;
-	if(oa == NULL)
-		return 1;
-	if(ob == NULL)
-		return -1;
-
-	return skiplist_compare_text(oa->group_name, NULL, ob->group_name, NULL);
-	}
-
-
-int skiplist_compare_hostgroup(void *a, void *b) {
-	hostgroup *oa = NULL;
-	hostgroup *ob = NULL;
-
-	oa = (hostgroup *)a;
-	ob = (hostgroup *)b;
-
-	if(oa == NULL && ob == NULL)
-		return 0;
-	if(oa == NULL)
-		return 1;
-	if(ob == NULL)
-		return -1;
-
-	return skiplist_compare_text(oa->group_name, NULL, ob->group_name, NULL);
-	}
-
-
-int skiplist_compare_servicegroup(void *a, void *b) {
-	servicegroup *oa = NULL;
-	servicegroup *ob = NULL;
-
-	oa = (servicegroup *)a;
-	ob = (servicegroup *)b;
-
-	if(oa == NULL && ob == NULL)
-		return 0;
-	if(oa == NULL)
-		return 1;
-	if(ob == NULL)
-		return -1;
-
-	return skiplist_compare_text(oa->group_name, NULL, ob->group_name, NULL);
-	}
-
-
-int skiplist_compare_hostescalation(void *a, void *b) {
-	hostescalation *oa = NULL;
-	hostescalation *ob = NULL;
-
-	oa = (hostescalation *)a;
-	ob = (hostescalation *)b;
-
-	if(oa == NULL && ob == NULL)
-		return 0;
-	if(oa == NULL)
-		return 1;
-	if(ob == NULL)
-		return -1;
-
-	return skiplist_compare_text(oa->host_name, NULL, ob->host_name, NULL);
-	}
-
-
-int skiplist_compare_serviceescalation(void *a, void *b) {
-	serviceescalation *oa = NULL;
-	serviceescalation *ob = NULL;
-
-	oa = (serviceescalation *)a;
-	ob = (serviceescalation *)b;
-
-	if(oa == NULL && ob == NULL)
-		return 0;
-	if(oa == NULL)
-		return 1;
-	if(ob == NULL)
-		return -1;
-
-	return skiplist_compare_text(oa->host_name, oa->description, ob->host_name, ob->description);
-	}
-
-
-int skiplist_compare_hostdependency(void *a, void *b) {
-	hostdependency *oa = NULL;
-	hostdependency *ob = NULL;
-
-	oa = (hostdependency *)a;
-	ob = (hostdependency *)b;
-
-	if(oa == NULL && ob == NULL)
-		return 0;
-	if(oa == NULL)
-		return 1;
-	if(ob == NULL)
-		return -1;
-
-	return skiplist_compare_text(oa->dependent_host_name, NULL, ob->dependent_host_name, NULL);
-	}
-
-
-int skiplist_compare_servicedependency(void *a, void *b) {
-	servicedependency *oa = NULL;
-	servicedependency *ob = NULL;
-
-	oa = (servicedependency *)a;
-	ob = (servicedependency *)b;
-
-	if(oa == NULL && ob == NULL)
-		return 0;
-	if(oa == NULL)
-		return 1;
-	if(ob == NULL)
-		return -1;
-
-	return skiplist_compare_text(oa->dependent_host_name, oa->dependent_service_description, ob->dependent_host_name, ob->dependent_service_description);
-	}
-
-
 int get_host_count(void) {
-
-	if(object_skiplists[HOST_SKIPLIST])
-		return object_skiplists[HOST_SKIPLIST]->items;
-
-	return 0;
+	return num_objects.hosts;
 	}
 
 
 int get_service_count(void) {
-
-	if(object_skiplists[SERVICE_SKIPLIST])
-		return object_skiplists[SERVICE_SKIPLIST]->items;
-
-	return 0;
+	return num_objects.services;
 	}
 
 
@@ -398,6 +140,69 @@ int get_service_count(void) {
 /**************** OBJECT ADDITION FUNCTIONS ***********************/
 /******************************************************************/
 
+static int create_object_table(const char *name, unsigned int elems, unsigned int size, void **ptr)
+{
+	void *ret;
+	if (!elems)
+		return OK;
+	ret = calloc(elems, size);
+	if (!ret) {
+		logit(NSLOG_CONFIG_ERROR, TRUE, "Error: Failed to allocate %s table with %u elements\n", name, elems);
+		return ERROR;
+		}
+	*ptr = ret;
+	return OK;
+}
+
+#define mktable(name, id) \
+	create_object_table(#name, ocount[id], sizeof(name), (void **)&name##_list)
+
+/* ocount is an array with NUM_OBJECT_TYPES members */
+int create_object_tables(unsigned int *ocount)
+{
+	int i;
+
+	for (i = 0; i < NUM_HASHED_OBJECT_TYPES; i++) {
+		const unsigned int hash_size = ocount[i] * 1.5;
+		if (!hash_size)
+			continue;
+		object_hash_tables[i] = dkhash_create(hash_size);
+		if (!object_hash_tables[i]) {
+			logit(NSLOG_CONFIG_ERROR, TRUE, "Failed to create hash table with %u entries\n", hash_size);
+		}
+	}
+
+	/*
+	 * errors here will always lead to an early exit, so there's no need
+	 * to free() successful allocs when later ones fail
+	 */
+	if (mktable(timeperiod, TIMEPERIOD_SKIPLIST) != OK)
+		return ERROR;
+	if (mktable(command, COMMAND_SKIPLIST) != OK)
+		return ERROR;
+	if (mktable(host, HOST_SKIPLIST) != OK)
+		return ERROR;
+	if (mktable(service, SERVICE_SKIPLIST) != OK)
+		return ERROR;
+	if (mktable(contact, CONTACT_SKIPLIST) != OK)
+		return ERROR;
+	if (mktable(hostgroup, HOSTGROUP_SKIPLIST) != OK)
+		return ERROR;
+	if (mktable(servicegroup, SERVICEGROUP_SKIPLIST) != OK)
+		return ERROR;
+	if (mktable(contactgroup, CONTACTGROUP_SKIPLIST) != OK)
+		return ERROR;
+	if (mktable(hostescalation, HOSTESCALATION_SKIPLIST) != OK)
+		return ERROR;
+	if (mktable(hostdependency, HOSTDEPENDENCY_SKIPLIST) != OK)
+		return ERROR;
+	if (mktable(serviceescalation, SERVICEESCALATION_SKIPLIST) != OK)
+		return ERROR;
+	if (mktable(servicedependency, SERVICEDEPENDENCY_SKIPLIST) != OK)
+		return ERROR;
+
+	return OK;
+}
 
 
 /* add a new timeperiod to the list in memory */
@@ -411,29 +216,27 @@ timeperiod *add_timeperiod(char *name, char *alias) {
 		return NULL;
 		}
 
-	/* allocate memory for the new timeperiod */
-	if((new_timeperiod = calloc(1, sizeof(timeperiod))) == NULL)
-		return NULL;
+	new_timeperiod = &timeperiod_list[num_objects.timeperiods];
 
 	/* copy string vars */
 	if((new_timeperiod->name = (char *)strdup(name)) == NULL)
-		result = ERROR;
+		return NULL;
 	if((new_timeperiod->alias = (char *)strdup(alias)) == NULL)
 		result = ERROR;
 
-	/* add new timeperiod to skiplist */
+	/* add new timeperiod to hash table */
 	if(result == OK) {
-		result = skiplist_insert(object_skiplists[TIMEPERIOD_SKIPLIST], (void *)new_timeperiod);
+		result = dkhash_insert(object_hash_tables[TIMEPERIOD_SKIPLIST], new_timeperiod->name, NULL, new_timeperiod);
 		switch(result) {
-			case SKIPLIST_ERROR_DUPLICATE:
+			case DKHASH_EDUPE:
 				logit(NSLOG_CONFIG_ERROR, TRUE, "Error: Timeperiod '%s' has already been defined\n", name);
 				result = ERROR;
 				break;
-			case SKIPLIST_OK:
+			case DKHASH_OK:
 				result = OK;
 				break;
 			default:
-				logit(NSLOG_CONFIG_ERROR, TRUE, "Error: Could not add timeperiod '%s' to skiplist\n", name);
+				logit(NSLOG_CONFIG_ERROR, TRUE, "Error: Could not add timeperiod '%s' to hash table\n", name);
 				result = ERROR;
 				break;
 			}
@@ -443,20 +246,12 @@ timeperiod *add_timeperiod(char *name, char *alias) {
 	if(result == ERROR) {
 		my_free(new_timeperiod->alias);
 		my_free(new_timeperiod->name);
-		my_free(new_timeperiod);
 		return NULL;
 		}
 
-	/* timeperiods are registered alphabetically, so add new items to tail of list */
-	if(timeperiod_list == NULL) {
-		timeperiod_list = new_timeperiod;
-		timeperiod_list_tail = timeperiod_list;
-		}
-	else {
-		timeperiod_list_tail->next = new_timeperiod;
-		timeperiod_list_tail = new_timeperiod;
-		}
-
+	new_timeperiod->id = num_objects.timeperiods++;
+	if(new_timeperiod->id)
+		timeperiod_list[new_timeperiod->id - 1].next = new_timeperiod;
 	return new_timeperiod;
 	}
 
@@ -594,6 +389,7 @@ timerange *add_timerange_to_daterange(daterange *drange, unsigned long start_tim
 /* add a new host definition */
 host *add_host(char *name, char *display_name, char *alias, char *address, char *check_period, int initial_state, double check_interval, double retry_interval, int max_attempts, int notify_up, int notify_down, int notify_unreachable, int notify_flapping, int notify_downtime, double notification_interval, double first_notification_delay, char *notification_period, int notifications_enabled, char *check_command, int checks_enabled, int accept_passive_checks, char *event_handler, int event_handler_enabled, int flap_detection_enabled, double low_flap_threshold, double high_flap_threshold, int flap_detection_on_up, int flap_detection_on_down, int flap_detection_on_unreachable, int stalk_on_up, int stalk_on_down, int stalk_on_unreachable, int process_perfdata, int failure_prediction_enabled, char *failure_prediction_options, int check_freshness, int freshness_threshold, char *notes, char *notes_url, char *action_url, char *icon_image, char *icon_image_alt, char *vrml_image, char *statusmap_image, int x_2d, int y_2d, int have_2d_coords, double x_3d, double y_3d, double z_3d, int have_3d_coords, int should_be_drawn, int retain_status_information, int retain_nonstatus_information, int obsess_over_host) {
 	host *new_host = NULL;
+	timeperiod *tp;
 	int result = OK;
 #ifdef NSCORE
 	int x = 0;
@@ -627,9 +423,7 @@ host *add_host(char *name, char *display_name, char *alias, char *address, char 
 		return NULL;
 		}
 
-	/* allocate memory for a new host */
-	if((new_host = (host *)calloc(1, sizeof(host))) == NULL)
-		return NULL;
+	new_host = &host_list[num_objects.hosts];
 
 	/* duplicate string vars */
 	if((new_host->name = (char *)strdup(name)) == NULL)
@@ -641,12 +435,30 @@ host *add_host(char *name, char *display_name, char *alias, char *address, char 
 	if((new_host->address = (char *)strdup(address)) == NULL)
 		result = ERROR;
 	if(check_period) {
-		if((new_host->check_period = (char *)strdup(check_period)) == NULL)
+		if (!(tp = find_timeperiod(check_period))) {
+			logit(NSLOG_CONFIG_ERROR, TRUE, "Error: Failed to locate check_period '%s' for host '%s'!\n",
+				  check_period, name);
 			result = ERROR;
+			}
+		else {
+			new_host->check_period = tp->name;
+#ifndef NSCGI
+			new_host->check_period_ptr = tp;
+#endif
+			}
 		}
 	if(notification_period) {
-		if((new_host->notification_period = (char *)strdup(notification_period)) == NULL)
+		if (!(tp = find_timeperiod(notification_period))) {
+			logit(NSLOG_CONFIG_ERROR, TRUE, "Error: Failed to locate noticiation_period '%s' for host '%s'!\n",
+				  notification_period, name);
 			result = ERROR;
+			}
+		else {
+			new_host->notification_period = tp->name;
+#ifndef NSCGI
+			new_host->check_period_ptr = tp;
+#endif
+			}
 		}
 	if(check_command) {
 		if((new_host->host_check_command = (char *)strdup(check_command)) == NULL)
@@ -776,23 +588,21 @@ host *add_host(char *name, char *display_name, char *alias, char *address, char 
 	new_host->total_services = 0;
 	new_host->total_service_check_interval = 0L;
 	new_host->modified_attributes = MODATTR_NONE;
-	new_host->circular_path_checked = FALSE;
-	new_host->contains_circular_path = FALSE;
 #endif
 
-	/* add new host to skiplist */
+	/* add new host to hash table */
 	if(result == OK) {
-		result = skiplist_insert(object_skiplists[HOST_SKIPLIST], (void *)new_host);
+		result = dkhash_insert(object_hash_tables[HOST_SKIPLIST], new_host->name, NULL, new_host);
 		switch(result) {
-			case SKIPLIST_ERROR_DUPLICATE:
+			case DKHASH_EDUPE:
 				logit(NSLOG_CONFIG_ERROR, TRUE, "Error: Host '%s' has already been defined\n", name);
 				result = ERROR;
 				break;
-			case SKIPLIST_OK:
+			case DKHASH_OK:
 				result = OK;
 				break;
 			default:
-				logit(NSLOG_CONFIG_ERROR, TRUE, "Error: Could not add host '%s' to skiplist\n", name);
+				logit(NSLOG_CONFIG_ERROR, TRUE, "Error: Could not add host '%s' to hash table\n", name);
 				result = ERROR;
 				break;
 			}
@@ -815,26 +625,16 @@ host *add_host(char *name, char *display_name, char *alias, char *address, char 
 		my_free(new_host->failure_prediction_options);
 		my_free(new_host->event_handler);
 		my_free(new_host->host_check_command);
-		my_free(new_host->notification_period);
-		my_free(new_host->check_period);
 		my_free(new_host->address);
 		my_free(new_host->alias);
 		my_free(new_host->display_name);
 		my_free(new_host->name);
-		my_free(new_host);
 		return NULL;
 		}
 
-	/* hosts are sorted alphabetically, so add new items to tail of list */
-	if(host_list == NULL) {
-		host_list = new_host;
-		host_list_tail = host_list;
-		}
-	else {
-		host_list_tail->next = new_host;
-		host_list_tail = new_host;
-		}
-
+	new_host->id = num_objects.hosts++;
+	if(new_host->id)
+		host_list[new_host->id - 1].next = new_host;
 	return new_host;
 	}
 
@@ -891,8 +691,8 @@ hostsmember *add_child_link_to_host(host *hst, host *child_ptr) {
 	if((new_hostsmember = (hostsmember *)malloc(sizeof(hostsmember))) == NULL)
 		return NULL;
 
-	/* initialize values */
-	new_hostsmember->host_name = NULL;
+	/* assign values */
+	new_hostsmember->host_name = child_ptr->name;
 #ifdef NSCORE
 	new_hostsmember->host_ptr = child_ptr;
 #endif
@@ -917,9 +717,12 @@ servicesmember *add_service_link_to_host(host *hst, service *service_ptr) {
 	if((new_servicesmember = (servicesmember *)calloc(1, sizeof(servicesmember))) == NULL)
 		return NULL;
 
-	/* initialize values */
+	/* assign values */
+	new_servicesmember->host_name = service_ptr->host_name;
+	new_servicesmember->service_description = service_ptr->description;
 #ifdef NSCORE
 	new_servicesmember->service_ptr = service_ptr;
+	hst->total_services++;
 #endif
 
 	/* add the child entry to the host definition */
@@ -934,11 +737,12 @@ servicesmember *add_service_link_to_host(host *hst, service *service_ptr) {
 /* add a new contactgroup to a host */
 contactgroupsmember *add_contactgroup_to_host(host *hst, char *group_name) {
 	contactgroupsmember *new_contactgroupsmember = NULL;
-	int result = OK;
+	contactgroup *cg;
 
 	/* make sure we have the data we need */
-	if(hst == NULL || (group_name == NULL || !strcmp(group_name, ""))) {
-		logit(NSLOG_CONFIG_ERROR, TRUE, "Error: Host or contactgroup member is NULL\n");
+	if(!(cg = find_contactgroup(group_name))) {
+		logit(NSLOG_CONFIG_ERROR, TRUE, "Error: Contact group '%s' specified for host '%s' is not defined anywhere!\n",
+			  group_name, hst->name);
 		return NULL;
 		}
 
@@ -946,16 +750,8 @@ contactgroupsmember *add_contactgroup_to_host(host *hst, char *group_name) {
 	if((new_contactgroupsmember = calloc(1, sizeof(contactgroupsmember))) == NULL)
 		return NULL;
 
-	/* duplicate string vars */
-	if((new_contactgroupsmember->group_name = (char *)strdup(group_name)) == NULL)
-		result = ERROR;
-
-	/* handle errors */
-	if(result == ERROR) {
-		my_free(new_contactgroupsmember->group_name);
-		my_free(new_contactgroupsmember);
-		return NULL;
-		}
+	/* assign vars. Object names are immutable, so no need to copy */
+	new_contactgroupsmember->group_name = cg->group_name;
 
 	/* add the new member to the head of the member list */
 	new_contactgroupsmember->next = hst->contact_groups;
@@ -993,9 +789,7 @@ hostgroup *add_hostgroup(char *name, char *alias, char *notes, char *notes_url, 
 		return NULL;
 		}
 
-	/* allocate memory */
-	if((new_hostgroup = (hostgroup *)calloc(1, sizeof(hostgroup))) == NULL)
-		return NULL;
+	new_hostgroup = &hostgroup_list[num_objects.hostgroups];
 
 	/* duplicate vars */
 	if((new_hostgroup->group_name = (char *)strdup(name)) == NULL)
@@ -1015,19 +809,19 @@ hostgroup *add_hostgroup(char *name, char *alias, char *notes, char *notes_url, 
 			result = ERROR;
 		}
 
-	/* add new host group to skiplist */
+	/* add new host group to hash table */
 	if(result == OK) {
-		result = skiplist_insert(object_skiplists[HOSTGROUP_SKIPLIST], (void *)new_hostgroup);
+		result = dkhash_insert(object_hash_tables[HOSTGROUP_SKIPLIST], new_hostgroup->group_name, NULL, new_hostgroup);
 		switch(result) {
-			case SKIPLIST_ERROR_DUPLICATE:
+			case DKHASH_EDUPE:
 				logit(NSLOG_CONFIG_ERROR, TRUE, "Error: Hostgroup '%s' has already been defined\n", name);
 				result = ERROR;
 				break;
-			case SKIPLIST_OK:
+			case DKHASH_OK:
 				result = OK;
 				break;
 			default:
-				logit(NSLOG_CONFIG_ERROR, TRUE, "Error: Could not add hostgroup '%s' to skiplist\n", name);
+				logit(NSLOG_CONFIG_ERROR, TRUE, "Error: Could not add hostgroup '%s' to hash table\n", name);
 				result = ERROR;
 				break;
 			}
@@ -1037,20 +831,12 @@ hostgroup *add_hostgroup(char *name, char *alias, char *notes, char *notes_url, 
 	if(result == ERROR) {
 		my_free(new_hostgroup->alias);
 		my_free(new_hostgroup->group_name);
-		my_free(new_hostgroup);
 		return NULL;
 		}
 
-	/* hostgroups are sorted alphabetically, so add new items to tail of list */
-	if(hostgroup_list == NULL) {
-		hostgroup_list = new_hostgroup;
-		hostgroup_list_tail = hostgroup_list;
-		}
-	else {
-		hostgroup_list_tail->next = new_hostgroup;
-		hostgroup_list_tail = new_hostgroup;
-		}
-
+	new_hostgroup->id = num_objects.hostgroups++;
+	if(new_hostgroup->id)
+		hostgroup_list[new_hostgroup->id - 1].next = new_hostgroup;
 	return new_hostgroup;
 	}
 
@@ -1121,9 +907,7 @@ servicegroup *add_servicegroup(char *name, char *alias, char *notes, char *notes
 		return NULL;
 		}
 
-	/* allocate memory */
-	if((new_servicegroup = (servicegroup *)calloc(1, sizeof(servicegroup))) == NULL)
-		return NULL;
+	new_servicegroup = &servicegroup_list[num_objects.servicegroups];
 
 	/* duplicate vars */
 	if((new_servicegroup->group_name = (char *)strdup(name)) == NULL)
@@ -1143,19 +927,19 @@ servicegroup *add_servicegroup(char *name, char *alias, char *notes, char *notes
 			result = ERROR;
 		}
 
-	/* add new service group to skiplist */
+	/* add new service group to hash table */
 	if(result == OK) {
-		result = skiplist_insert(object_skiplists[SERVICEGROUP_SKIPLIST], (void *)new_servicegroup);
+		result = dkhash_insert(object_hash_tables[SERVICEGROUP_SKIPLIST], new_servicegroup->group_name, NULL, new_servicegroup);
 		switch(result) {
-			case SKIPLIST_ERROR_DUPLICATE:
+			case DKHASH_EDUPE:
 				logit(NSLOG_CONFIG_ERROR, TRUE, "Error: Servicegroup '%s' has already been defined\n", name);
 				result = ERROR;
 				break;
-			case SKIPLIST_OK:
+			case DKHASH_OK:
 				result = OK;
 				break;
 			default:
-				logit(NSLOG_CONFIG_ERROR, TRUE, "Error: Could not add servicegroup '%s' to skiplist\n", name);
+				logit(NSLOG_CONFIG_ERROR, TRUE, "Error: Could not add servicegroup '%s' to hash table\n", name);
 				result = ERROR;
 				break;
 			}
@@ -1169,16 +953,9 @@ servicegroup *add_servicegroup(char *name, char *alias, char *notes, char *notes
 		return NULL;
 		}
 
-	/* servicegroups are sorted alphabetically, so add new items to tail of list */
-	if(servicegroup_list == NULL) {
-		servicegroup_list = new_servicegroup;
-		servicegroup_list_tail = servicegroup_list;
-		}
-	else {
-		servicegroup_list_tail->next = new_servicegroup;
-		servicegroup_list_tail = new_servicegroup;
-		}
-
+	new_servicegroup->id = num_objects.servicegroups++;
+	if(new_servicegroup->id)
+		servicegroup_list[new_servicegroup->id - 1].next = new_servicegroup;
 	return new_servicegroup;
 	}
 
@@ -1255,20 +1032,35 @@ servicesmember *add_service_to_servicegroup(servicegroup *temp_servicegroup, cha
 /* add a new contact to the list in memory */
 contact *add_contact(char *name, char *alias, char *email, char *pager, char **addresses, char *svc_notification_period, char *host_notification_period, int notify_service_ok, int notify_service_critical, int notify_service_warning, int notify_service_unknown, int notify_service_flapping, int notify_service_downtime, int notify_host_up, int notify_host_down, int notify_host_unreachable, int notify_host_flapping, int notify_host_downtime, int host_notifications_enabled, int service_notifications_enabled, int can_submit_commands, int retain_status_information, int retain_nonstatus_information) {
 	contact *new_contact = NULL;
+	timeperiod *htp = NULL, *stp = NULL;
 	int x = 0;
 	int result = OK;
 
 	/* make sure we have the data we need */
-	if(name == NULL || !strcmp(name, "")) {
+	if(name == NULL || !*name) {
 		logit(NSLOG_CONFIG_ERROR, TRUE, "Error: Contact name is NULL\n");
 		return NULL;
 		}
-
-	/* allocate memory for a new contact */
-	if((new_contact = (contact *)calloc(1, sizeof(contact))) == NULL)
+	if(svc_notification_period && !(stp = find_timeperiod(svc_notification_period))) {
+		logit(NSLOG_VERIFICATION_ERROR, TRUE, "Error: Service notification period '%s' specified for contact '%s' is not defined anywhere!\n",
+			  svc_notification_period, name);
 		return NULL;
+		}
+	if(host_notification_period && !(htp = find_timeperiod(host_notification_period))) {
+		logit(NSLOG_VERIFICATION_ERROR, TRUE, "Error: Host notification period '%s' specified for contact '%s' is not defined anywhere!\n",
+			  host_notification_period, name);
+		return NULL;
+		}
 
-	/* duplicate vars */
+
+	new_contact = &contact_list[num_objects.contacts];
+
+	new_contact->host_notification_period = htp ? htp->name : NULL;
+	new_contact->service_notification_period = stp ? stp->name : NULL;
+#ifndef NSCGI
+	new_contact->host_notification_period_ptr = htp;
+	new_contact->service_notification_period_ptr = stp;
+#endif
 	if((new_contact->name = (char *)strdup(name)) == NULL)
 		result = ERROR;
 	if((new_contact->alias = (char *)strdup((alias == NULL) ? name : alias)) == NULL)
@@ -1279,14 +1071,6 @@ contact *add_contact(char *name, char *alias, char *email, char *pager, char **a
 		}
 	if(pager) {
 		if((new_contact->pager = (char *)strdup(pager)) == NULL)
-			result = ERROR;
-		}
-	if(svc_notification_period) {
-		if((new_contact->service_notification_period = (char *)strdup(svc_notification_period)) == NULL)
-			result = ERROR;
-		}
-	if(host_notification_period) {
-		if((new_contact->host_notification_period = (char *)strdup(host_notification_period)) == NULL)
 			result = ERROR;
 		}
 	if(addresses) {
@@ -1326,19 +1110,19 @@ contact *add_contact(char *name, char *alias, char *email, char *pager, char **a
 	new_contact->contactgroups_ptr = NULL;
 #endif
 
-	/* add new contact to skiplist */
+	/* add new contact to hash table */
 	if(result == OK) {
-		result = skiplist_insert(object_skiplists[CONTACT_SKIPLIST], (void *)new_contact);
+		result = dkhash_insert(object_hash_tables[CONTACT_SKIPLIST], new_contact->name, NULL, new_contact);
 		switch(result) {
-			case SKIPLIST_ERROR_DUPLICATE:
+			case DKHASH_EDUPE:
 				logit(NSLOG_CONFIG_ERROR, TRUE, "Error: Contact '%s' has already been defined\n", name);
 				result = ERROR;
 				break;
-			case SKIPLIST_OK:
+			case DKHASH_OK:
 				result = OK;
 				break;
 			default:
-				logit(NSLOG_CONFIG_ERROR, TRUE, "Error: Could not add contact '%s' to skiplist\n", name);
+				logit(NSLOG_CONFIG_ERROR, TRUE, "Error: Could not add contact '%s' to hash table\n", name);
 				result = ERROR;
 				break;
 			}
@@ -1352,22 +1136,13 @@ contact *add_contact(char *name, char *alias, char *email, char *pager, char **a
 		my_free(new_contact->alias);
 		my_free(new_contact->email);
 		my_free(new_contact->pager);
-		my_free(new_contact->service_notification_period);
-		my_free(new_contact->host_notification_period);
 		my_free(new_contact);
 		return NULL;
 		}
 
-	/* contacts are sorted alphabetically, so add new items to tail of list */
-	if(contact_list == NULL) {
-		contact_list = new_contact;
-		contact_list_tail = contact_list;
-		}
-	else {
-		contact_list_tail->next = new_contact;
-		contact_list_tail = new_contact;
-		}
-
+	new_contact->id = num_objects.contacts++;
+	if(new_contact->id)
+		contact_list[new_contact->id - 1].next = new_contact;
 	return new_contact;
 	}
 
@@ -1462,9 +1237,7 @@ contactgroup *add_contactgroup(char *name, char *alias) {
 		return NULL;
 		}
 
-	/* allocate memory for a new contactgroup entry */
-	if((new_contactgroup = calloc(1, sizeof(contactgroup))) == NULL)
-		return NULL;
+	new_contactgroup = &contactgroup_list[num_objects.contactgroups];
 
 	/* duplicate vars */
 	if((new_contactgroup->group_name = (char *)strdup(name)) == NULL)
@@ -1472,19 +1245,19 @@ contactgroup *add_contactgroup(char *name, char *alias) {
 	if((new_contactgroup->alias = (char *)strdup((alias == NULL) ? name : alias)) == NULL)
 		result = ERROR;
 
-	/* add new contact group to skiplist */
+	/* add new contact group to hash table */
 	if(result == OK) {
-		result = skiplist_insert(object_skiplists[CONTACTGROUP_SKIPLIST], (void *)new_contactgroup);
+		result = dkhash_insert(object_hash_tables[CONTACTGROUP_SKIPLIST], new_contactgroup->group_name, NULL, new_contactgroup);
 		switch(result) {
-			case SKIPLIST_ERROR_DUPLICATE:
+			case DKHASH_EDUPE:
 				logit(NSLOG_CONFIG_ERROR, TRUE, "Error: Contactgroup '%s' has already been defined\n", name);
 				result = ERROR;
 				break;
-			case SKIPLIST_OK:
+			case DKHASH_OK:
 				result = OK;
 				break;
 			default:
-				logit(NSLOG_CONFIG_ERROR, TRUE, "Error: Could not add contactgroup '%s' to skiplist\n", name);
+				logit(NSLOG_CONFIG_ERROR, TRUE, "Error: Could not add contactgroup '%s' to hash table\n", name);
 				result = ERROR;
 				break;
 			}
@@ -1494,20 +1267,12 @@ contactgroup *add_contactgroup(char *name, char *alias) {
 	if(result == ERROR) {
 		my_free(new_contactgroup->alias);
 		my_free(new_contactgroup->group_name);
-		my_free(new_contactgroup);
 		return NULL;
 		}
 
-	/* contactgroups are sorted alphabetically, so add new items to tail of list */
-	if(contactgroup_list == NULL) {
-		contactgroup_list = new_contactgroup;
-		contactgroup_list_tail = contactgroup_list;
-		}
-	else {
-		contactgroup_list_tail->next = new_contactgroup;
-		contactgroup_list_tail = new_contactgroup;
-		}
-
+	new_contactgroup->id = num_objects.contactgroups++;
+	if(new_contactgroup->id)
+		contactgroup_list[new_contactgroup->id - 1].next = new_contactgroup;
 	return new_contactgroup;
 	}
 
@@ -1550,6 +1315,8 @@ contactsmember *add_contact_to_contactgroup(contactgroup *grp, char *contact_nam
 
 /* add a new service to the list in memory */
 service *add_service(char *host_name, char *description, char *display_name, char *check_period, int initial_state, int max_attempts, int parallelize, int accept_passive_checks, double check_interval, double retry_interval, double notification_interval, double first_notification_delay, char *notification_period, int notify_recovery, int notify_unknown, int notify_warning, int notify_critical, int notify_flapping, int notify_downtime, int notifications_enabled, int is_volatile, char *event_handler, int event_handler_enabled, char *check_command, int checks_enabled, int flap_detection_enabled, double low_flap_threshold, double high_flap_threshold, int flap_detection_on_ok, int flap_detection_on_warning, int flap_detection_on_unknown, int flap_detection_on_critical, int stalk_on_ok, int stalk_on_warning, int stalk_on_unknown, int stalk_on_critical, int process_perfdata, int failure_prediction_enabled, char *failure_prediction_options, int check_freshness, int freshness_threshold, char *notes, char *notes_url, char *action_url, char *icon_image, char *icon_image_alt, int retain_status_information, int retain_nonstatus_information, int obsess_over_service) {
+	host *h;
+	timeperiod *cp = NULL, *np = NULL;
 	service *new_service = NULL;
 	int result = OK;
 #ifdef NSCORE
@@ -1557,8 +1324,23 @@ service *add_service(char *host_name, char *description, char *display_name, cha
 #endif
 
 	/* make sure we have everything we need */
-	if((host_name == NULL || !strcmp(host_name, "")) || (description == NULL || !strcmp(description, "")) || (check_command == NULL || !strcmp(check_command, ""))) {
+	if(host_name == NULL || description == NULL || !*description || check_command == NULL || !*check_command) {
 		logit(NSLOG_CONFIG_ERROR, TRUE, "Error: Service description, host name, or check command is NULL\n");
+		return NULL;
+		}
+	if (!(h = find_host(host_name))) {
+		logit(NSLOG_CONFIG_ERROR, TRUE, "Error: Unable to locate host '%s' for service '%s'\n",
+			  host_name, description);
+		return NULL;
+		}
+	if(notification_period && !(np = find_timeperiod(notification_period))) {
+		logit(NSLOG_CONFIG_ERROR, TRUE, "Error: notification_period '%s' for service '%s' on host '%s' could not be found!\n",
+			  notification_period, description, host_name);
+		return NULL;
+		}
+	if(check_period && !(cp = find_timeperiod(check_period))) {
+		logit(NSLOG_CONFIG_ERROR, TRUE, "Error: check_period '%s' for service '%s' on host '%s' not found!\n",
+			  check_period, description, host_name);
 		return NULL;
 		}
 
@@ -1574,12 +1356,17 @@ service *add_service(char *host_name, char *description, char *display_name, cha
 		}
 
 	/* allocate memory */
-	if((new_service = (service *)calloc(1, sizeof(service))) == NULL)
-		return NULL;
+	new_service = &service_list[num_objects.services];
 
-	/* duplicate vars */
-	if((new_service->host_name = (char *)strdup(host_name)) == NULL)
-		result = ERROR;
+	/* duplicate vars, but assign what we can */
+#ifndef NSCGI
+	new_service->notification_period_ptr = np;
+	new_service->check_period_ptr = cp;
+	new_service->host_ptr = h;
+#endif
+	new_service->check_period = cp ? cp->name : NULL;
+	new_service->notification_period = np ? np->name : NULL;
+	new_service->host_name = h->name;
 	if((new_service->description = (char *)strdup(description)) == NULL)
 		result = ERROR;
 	if((new_service->display_name = (char *)strdup((display_name == NULL) ? description : display_name)) == NULL)
@@ -1588,14 +1375,6 @@ service *add_service(char *host_name, char *description, char *display_name, cha
 		result = ERROR;
 	if(event_handler) {
 		if((new_service->event_handler = (char *)strdup(event_handler)) == NULL)
-			result = ERROR;
-		}
-	if(notification_period) {
-		if((new_service->notification_period = (char *)strdup(notification_period)) == NULL)
-			result = ERROR;
-		}
-	if(check_period) {
-		if((new_service->check_period = (char *)strdup(check_period)) == NULL)
 			result = ERROR;
 		}
 	if(failure_prediction_options) {
@@ -1707,19 +1486,19 @@ service *add_service(char *host_name, char *description, char *display_name, cha
 	new_service->modified_attributes = MODATTR_NONE;
 #endif
 
-	/* add new service to skiplist */
+	/* add new service to hash table */
 	if(result == OK) {
-		result = skiplist_insert(object_skiplists[SERVICE_SKIPLIST], (void *)new_service);
+		result = dkhash_insert(object_hash_tables[SERVICE_SKIPLIST], new_service->host_name, new_service->description, new_service);
 		switch(result) {
-			case SKIPLIST_ERROR_DUPLICATE:
+			case DKHASH_EDUPE:
 				logit(NSLOG_CONFIG_ERROR, TRUE, "Error: Service '%s' on host '%s' has already been defined\n", description, host_name);
 				result = ERROR;
 				break;
-			case SKIPLIST_OK:
+			case DKHASH_OK:
 				result = OK;
 				break;
 			default:
-				logit(NSLOG_CONFIG_ERROR, TRUE, "Error: Could not add service '%s' on host '%s' to skiplist\n", description, host_name);
+				logit(NSLOG_CONFIG_ERROR, TRUE, "Error: Could not add service '%s' on host '%s' to hash table\n", description, host_name);
 				result = ERROR;
 				break;
 			}
@@ -1733,26 +1512,19 @@ service *add_service(char *host_name, char *description, char *display_name, cha
 		my_free(new_service->long_plugin_output);
 #endif
 		my_free(new_service->failure_prediction_options);
-		my_free(new_service->notification_period);
 		my_free(new_service->event_handler);
 		my_free(new_service->service_check_command);
 		my_free(new_service->description);
-		my_free(new_service->host_name);
 		my_free(new_service->display_name);
 		my_free(new_service);
 		return NULL;
 		}
 
-	/* services are sorted alphabetically, so add new items to tail of list */
-	if(service_list == NULL) {
-		service_list = new_service;
-		service_list_tail = service_list;
-		}
-	else {
-		service_list_tail->next = new_service;
-		service_list_tail = new_service;
-		}
+	add_service_link_to_host(h, new_service);
 
+	new_service->id = num_objects.services++;
+	if(new_service->id)
+		service_list[new_service->id - 1].next = new_service;
 	return new_service;
 	}
 
@@ -1761,11 +1533,12 @@ service *add_service(char *host_name, char *description, char *display_name, cha
 /* adds a contact group to a service */
 contactgroupsmember *add_contactgroup_to_service(service *svc, char *group_name) {
 	contactgroupsmember *new_contactgroupsmember = NULL;
-	int result = OK;
+	contactgroup *cg;
 
 	/* bail out if we weren't given the data we need */
-	if(svc == NULL || (group_name == NULL || !strcmp(group_name, ""))) {
-		logit(NSLOG_CONFIG_ERROR, TRUE, "Error: Service or contactgroup name is NULL\n");
+	if(!(cg = find_contactgroup(group_name))) {
+		logit(NSLOG_CONFIG_ERROR, TRUE, "Error: Contact group '%s' specified for service '%s' on host '%s' is not defined anywhere!\n",
+			  group_name, svc->description, svc->host_name);
 		return NULL;
 		}
 
@@ -1773,15 +1546,8 @@ contactgroupsmember *add_contactgroup_to_service(service *svc, char *group_name)
 	if((new_contactgroupsmember = calloc(1, sizeof(contactgroupsmember))) == NULL)
 		return NULL;
 
-	/* duplicate vars */
-	if((new_contactgroupsmember->group_name = (char *)strdup(group_name)) == NULL)
-		result = ERROR;
-
-	/* handle errors */
-	if(result == ERROR) {
-		my_free(new_contactgroupsmember);
-		return NULL;
-		}
+	/* assign vars. Object names are immutable, so no need to copy */
+	new_contactgroupsmember->group_name = cg->group_name;
 
 	/* add this contactgroup to the service */
 	new_contactgroupsmember->next = svc->contact_groups;
@@ -1820,28 +1586,27 @@ command *add_command(char *name, char *value) {
 		}
 
 	/* allocate memory for the new command */
-	if((new_command = (command *)calloc(1, sizeof(command))) == NULL)
-		return NULL;
+	new_command = &command_list[num_objects.commands];
 
 	/* duplicate vars */
 	if((new_command->name = (char *)strdup(name)) == NULL)
-		result = ERROR;
+		return NULL;
 	if((new_command->command_line = (char *)strdup(value)) == NULL)
 		result = ERROR;
 
-	/* add new command to skiplist */
+	/* add new command to hash table */
 	if(result == OK) {
-		result = skiplist_insert(object_skiplists[COMMAND_SKIPLIST], (void *)new_command);
+		result = dkhash_insert(object_hash_tables[COMMAND_SKIPLIST], new_command->name, NULL, new_command);
 		switch(result) {
-			case SKIPLIST_ERROR_DUPLICATE:
+			case DKHASH_EDUPE:
 				logit(NSLOG_CONFIG_ERROR, TRUE, "Error: Command '%s' has already been defined\n", name);
 				result = ERROR;
 				break;
-			case SKIPLIST_OK:
+			case DKHASH_OK:
 				result = OK;
 				break;
 			default:
-				logit(NSLOG_CONFIG_ERROR, TRUE, "Error: Could not add command '%s' to skiplist\n", name);
+				logit(NSLOG_CONFIG_ERROR, TRUE, "Error: Could not add command '%s' to hash table\n", name);
 				result = ERROR;
 				break;
 			}
@@ -1851,20 +1616,12 @@ command *add_command(char *name, char *value) {
 	if(result == ERROR) {
 		my_free(new_command->command_line);
 		my_free(new_command->name);
-		my_free(new_command);
 		return NULL;
 		}
 
-	/* commands are sorted alphabetically, so add new items to tail of list */
-	if(command_list == NULL) {
-		command_list = new_command;
-		command_list_tail = command_list;
-		}
-	else {
-		command_list_tail->next = new_command;
-		command_list_tail = new_command;
-		}
-
+	new_command->id = num_objects.commands++;
+	if(new_command->id)
+		command_list[new_command->id - 1].next = new_command;
 	return new_command;
 	}
 
@@ -1873,31 +1630,46 @@ command *add_command(char *name, char *value) {
 /* add a new service escalation to the list in memory */
 serviceescalation *add_serviceescalation(char *host_name, char *description, int first_notification, int last_notification, double notification_interval, char *escalation_period, int escalate_on_warning, int escalate_on_unknown, int escalate_on_critical, int escalate_on_recovery) {
 	serviceescalation *new_serviceescalation = NULL;
-	int result = OK;
+	service *svc;
+	timeperiod *tp;
 
 	/* make sure we have the data we need */
-	if((host_name == NULL || !strcmp(host_name, "")) || (description == NULL || !strcmp(description, ""))) {
+	if(host_name == NULL || !*host_name || description == NULL || !*description) {
 		logit(NSLOG_CONFIG_ERROR, TRUE, "Error: Service escalation host name or description is NULL\n");
 		return NULL;
 		}
-
-#ifdef TEST
-	printf("NEW SVC ESCALATION: %s/%s = %d/%d/%.3f\n", host_name, description, first_notification, last_notification, notification_interval);
-#endif
+	if(!(svc = find_service(host_name, description))) {
+		logit(NSLOG_CONFIG_ERROR, TRUE, "Error: Service '%s' on host '%s' has an escalation but is not defined anywhere!\n",
+			  host_name, description);
+		return NULL;
+		}
+	if (escalation_period && !(tp = find_timeperiod(escalation_period))) {
+		logit(NSLOG_VERIFICATION_ERROR, TRUE, "Error: Escalation period '%s' specified in service escalation for service '%s' on host '%s' is not defined anywhere!\n",
+			  escalation_period, description, host_name);
+		return NULL ;
+		}
 
 	/* allocate memory for a new service escalation entry */
 	if((new_serviceescalation = calloc(1, sizeof(serviceescalation))) == NULL)
 		return NULL;
 
-	/* duplicate vars */
-	if((new_serviceescalation->host_name = (char *)strdup(host_name)) == NULL)
-		result = ERROR;
-	if((new_serviceescalation->description = (char *)strdup(description)) == NULL)
-		result = ERROR;
-	if(escalation_period) {
-		if((new_serviceescalation->escalation_period = (char *)strdup(escalation_period)) == NULL)
-			result = ERROR;
+	new_serviceescalation = &serviceescalation_list[num_objects.serviceescalations];
+
+	if(add_object_to_objectlist(&svc->escalation_list, new_serviceescalation) != OK) {
+		logit(NSLOG_CONFIG_ERROR, TRUE, "Could not add escalation to service '%s' on host '%s'\n",
+			  svc->host_name, svc->description);
+		return NULL;
 		}
+
+	/* assign vars. object names are immutable, so no need to copy */
+	new_serviceescalation->host_name = svc->host_name;
+	new_serviceescalation->description = svc->description;
+#ifndef NSCGI
+	new_serviceescalation->service_ptr = svc;
+	new_serviceescalation->escalation_period_ptr = tp;
+#endif
+	if(tp)
+		new_serviceescalation->escalation_period = tp->name;
 
 	new_serviceescalation->first_notification = first_notification;
 	new_serviceescalation->last_notification = last_notification;
@@ -1907,39 +1679,9 @@ serviceescalation *add_serviceescalation(char *host_name, char *description, int
 	new_serviceescalation->escalate_on_unknown = (escalate_on_unknown > 0) ? TRUE : FALSE;
 	new_serviceescalation->escalate_on_critical = (escalate_on_critical > 0) ? TRUE : FALSE;
 
-	/* add new serviceescalation to skiplist */
-	if(result == OK) {
-		result = skiplist_insert(object_skiplists[SERVICEESCALATION_SKIPLIST], (void *)new_serviceescalation);
-		switch(result) {
-			case SKIPLIST_OK:
-				result = OK;
-				break;
-			default:
-				logit(NSLOG_CONFIG_ERROR, TRUE, "Error: Could not add escalation for service '%s' on host '%s' to skiplist\n", description, host_name);
-				result = ERROR;
-				break;
-			}
-		}
-
-	/* handle errors */
-	if(result == ERROR) {
-		my_free(new_serviceescalation->host_name);
-		my_free(new_serviceescalation->description);
-		my_free(new_serviceescalation->escalation_period);
-		my_free(new_serviceescalation);
-		return NULL;
-		}
-
-	/* service escalations are sorted alphabetically, so add new items to tail of list */
-	if(serviceescalation_list == NULL) {
-		serviceescalation_list = new_serviceescalation;
-		serviceescalation_list_tail = serviceescalation_list;
-		}
-	else {
-		serviceescalation_list_tail->next = new_serviceescalation;
-		serviceescalation_list_tail = new_serviceescalation;
-		}
-
+	new_serviceescalation->id = num_objects.serviceescalations++;
+	if(new_serviceescalation->id)
+		serviceescalation_list[new_serviceescalation->id - 1].next = new_serviceescalation;
 	return new_serviceescalation;
 	}
 
@@ -1948,11 +1690,16 @@ serviceescalation *add_serviceescalation(char *host_name, char *description, int
 /* adds a contact group to a service escalation */
 contactgroupsmember *add_contactgroup_to_serviceescalation(serviceescalation *se, char *group_name) {
 	contactgroupsmember *new_contactgroupsmember = NULL;
-	int result = OK;
+	contactgroup *cg;
 
 	/* bail out if we weren't given the data we need */
-	if(se == NULL || (group_name == NULL || !strcmp(group_name, ""))) {
+	if(se == NULL || group_name == NULL || !*group_name) {
 		logit(NSLOG_CONFIG_ERROR, TRUE, "Error: Service escalation or contactgroup name is NULL\n");
+		return NULL;
+		}
+	if (!(cg = find_contactgroup(group_name))) {
+		logit(NSLOG_VERIFICATION_ERROR, TRUE, "Error: Contact group '%s' specified in service escalation for service '%s' on host '%s' is not defined anywhere\n",
+			  group_name, se->description, se->host_name);
 		return NULL;
 		}
 
@@ -1960,16 +1707,11 @@ contactgroupsmember *add_contactgroup_to_serviceescalation(serviceescalation *se
 	if((new_contactgroupsmember = (contactgroupsmember *)calloc(1, sizeof(contactgroupsmember))) == NULL)
 		return NULL;
 
-	/* duplicate vars */
-	if((new_contactgroupsmember->group_name = (char *)strdup(group_name)) == NULL)
-		result = ERROR;
-
-	/* handle errors */
-	if(result == ERROR) {
-		my_free(new_contactgroupsmember->group_name);
-		my_free(new_contactgroupsmember);
-		return NULL;
-		}
+	/* assign vars. Object names are immutable, so no need to copy */
+	new_contactgroupsmember->group_name = cg->group_name;
+#ifndef NSCGI
+	new_contactgroupsmember->group_ptr = cg;
+#endif
 
 	/* add this contactgroup to the service escalation */
 	new_contactgroupsmember->next = se->contact_groups;
@@ -1991,35 +1733,57 @@ contactsmember *add_contact_to_serviceescalation(serviceescalation *se, char *co
 /* adds a service dependency definition */
 servicedependency *add_service_dependency(char *dependent_host_name, char *dependent_service_description, char *host_name, char *service_description, int dependency_type, int inherits_parent, int fail_on_ok, int fail_on_warning, int fail_on_unknown, int fail_on_critical, int fail_on_pending, char *dependency_period) {
 	servicedependency *new_servicedependency = NULL;
-	int result = OK;
+	service *parent, *child;
+	timeperiod *tp = NULL;
 
 	/* make sure we have what we need */
-	if((host_name == NULL || !strcmp(host_name, "")) || (service_description == NULL || !strcmp(service_description, ""))) {
-		logit(NSLOG_CONFIG_ERROR, TRUE, "Error: NULL master service description/host name in service dependency definition\n");
+	parent = find_service(host_name, service_description);
+	if(!parent) {
+		logit(NSLOG_CONFIG_ERROR, TRUE, "Error: Master service '%s' on host '%s' is not defined anywhere!\n",
+			  service_description, host_name);
 		return NULL;
 		}
-	if((dependent_host_name == NULL || !strcmp(dependent_host_name, "")) || (dependent_service_description == NULL || !strcmp(dependent_service_description, ""))) {
-		logit(NSLOG_CONFIG_ERROR, TRUE, "Error: NULL dependent service description/host name in service dependency definition\n");
+	child = find_service(dependent_host_name, dependent_service_description);
+	if(!child) {
+		logit(NSLOG_CONFIG_ERROR, TRUE, "Error: Dependent service '%s' on host '%s' is not defined anywhere!\n",
+			 dependent_service_description, dependent_host_name);
+		return NULL;
+		}
+	if (dependency_period && !(tp = find_timeperiod(dependency_period))) {
+		logit(NSLOG_CONFIG_ERROR, TRUE, "Error: Failed to locate timeperiod '%s' for dependency from service '%s' on host '%s' to service '%s' on host '%s'\n",
+			  dependency_period, dependent_service_description, dependent_host_name, service_description, host_name);
 		return NULL;
 		}
 
 	/* allocate memory for a new service dependency entry */
-	if((new_servicedependency = (servicedependency *)calloc(1, sizeof(servicedependency))) == NULL)
-		return NULL;
+	new_servicedependency = &servicedependency_list[num_objects.servicedependencies];
 
-	/* duplicate vars */
-	if((new_servicedependency->dependent_host_name = (char *)strdup(dependent_host_name)) == NULL)
-		result = ERROR;
-	if((new_servicedependency->dependent_service_description = (char *)strdup(dependent_service_description)) == NULL)
-		result = ERROR;
-	if((new_servicedependency->host_name = (char *)strdup(host_name)) == NULL)
-		result = ERROR;
-	if((new_servicedependency->service_description = (char *)strdup(service_description)) == NULL)
-		result = ERROR;
-	if(dependency_period) {
-		if((new_servicedependency->dependency_period = (char *)strdup(dependency_period)) == NULL)
-			result = ERROR;
+#ifndef NSCGI
+	/*
+	 * add new service dependency to its respective services.
+	 * Ordering doesn't matter here as we'll have to check them
+	 * all anyway.
+	 */
+	if(dependency_type == NOTIFICATION_DEPENDENCY) {
+		if(add_object_to_objectlist(&child->notify_deps, new_servicedependency) != OK)
+			return NULL;
 		}
+	else {
+		if(add_object_to_objectlist(&child->exec_deps, new_servicedependency) != OK)
+			return NULL;
+		}
+	new_servicedependency->dependent_service_ptr = child;
+	new_servicedependency->master_service_ptr = parent;
+	new_servicedependency->dependency_period_ptr = tp;
+#endif
+
+	/* assign vars. object names are immutable, so no need to copy */
+	new_servicedependency->dependent_host_name = child->host_name;
+	new_servicedependency->dependent_service_description = child->description;
+	new_servicedependency->host_name = parent->host_name;
+	new_servicedependency->service_description = parent->description;
+	if (tp)
+		new_servicedependency->dependency_period = tp->name;
 
 	new_servicedependency->dependency_type = (dependency_type == EXECUTION_DEPENDENCY) ? EXECUTION_DEPENDENCY : NOTIFICATION_DEPENDENCY;
 	new_servicedependency->inherits_parent = (inherits_parent > 0) ? TRUE : FALSE;
@@ -2028,45 +1792,10 @@ servicedependency *add_service_dependency(char *dependent_host_name, char *depen
 	new_servicedependency->fail_on_unknown = (fail_on_unknown == 1) ? TRUE : FALSE;
 	new_servicedependency->fail_on_critical = (fail_on_critical == 1) ? TRUE : FALSE;
 	new_servicedependency->fail_on_pending = (fail_on_pending == 1) ? TRUE : FALSE;
-#ifdef NSCORE
-	new_servicedependency->circular_path_checked = FALSE;
-	new_servicedependency->contains_circular_path = FALSE;
-#endif
 
-	/* add new service dependency to skiplist */
-	if(result == OK) {
-		result = skiplist_insert(object_skiplists[SERVICEDEPENDENCY_SKIPLIST], (void *)new_servicedependency);
-		switch(result) {
-			case SKIPLIST_OK:
-				result = OK;
-				break;
-			default:
-				logit(NSLOG_CONFIG_ERROR, TRUE, "Error: Could not add service dependency to skiplist\n");
-				result = ERROR;
-				break;
-			}
-		}
-
-	/* handle errors */
-	if(result == ERROR) {
-		my_free(new_servicedependency->host_name);
-		my_free(new_servicedependency->service_description);
-		my_free(new_servicedependency->dependent_host_name);
-		my_free(new_servicedependency->dependent_service_description);
-		my_free(new_servicedependency);
-		return NULL;
-		}
-
-	/* service dependencies are sorted alphabetically, so add new items to tail of list */
-	if(servicedependency_list == NULL) {
-		servicedependency_list = new_servicedependency;
-		servicedependency_list_tail = servicedependency_list;
-		}
-	else {
-		servicedependency_list_tail->next = new_servicedependency;
-		servicedependency_list_tail = new_servicedependency;
-		}
-
+	new_servicedependency->id = num_objects.servicedependencies++;
+	if(new_servicedependency->id)
+		servicedependency_list[new_servicedependency->id - 1].next = new_servicedependency;
 	return new_servicedependency;
 	}
 
@@ -2074,27 +1803,51 @@ servicedependency *add_service_dependency(char *dependent_host_name, char *depen
 /* adds a host dependency definition */
 hostdependency *add_host_dependency(char *dependent_host_name, char *host_name, int dependency_type, int inherits_parent, int fail_on_up, int fail_on_down, int fail_on_unreachable, int fail_on_pending, char *dependency_period) {
 	hostdependency *new_hostdependency = NULL;
+	host *parent, *child;
+	timeperiod *tp = NULL;
 	int result = OK;
 
 	/* make sure we have what we need */
-	if((dependent_host_name == NULL || !strcmp(dependent_host_name, "")) || (host_name == NULL || !strcmp(host_name, ""))) {
-		logit(NSLOG_CONFIG_ERROR, TRUE, "Error: NULL host name in host dependency definition\n");
+	parent = find_host(host_name);
+	if (!parent) {
+		logit(NSLOG_CONFIG_ERROR, TRUE, "Error: Master host '%s' in hostdependency from '%s' to '%s' is not defined anywhere!\n",
+			  host_name, dependent_host_name, host_name);
 		return NULL;
 		}
-
-	/* allocate memory for a new host dependency entry */
-	if((new_hostdependency = (hostdependency *)calloc(1, sizeof(hostdependency))) == NULL)
+	child = find_host(dependent_host_name);
+	if (!child) {
+		logit(NSLOG_CONFIG_ERROR, TRUE, "Error: Dependent host '%s' in hostdependency from '%s' to '%s' is not defined anywhere!\n",
+			  dependent_host_name, dependent_host_name, host_name);
 		return NULL;
+		}
+	if (dependency_period && !(tp = find_timeperiod(dependency_period))) {
+		logit(NSLOG_CONFIG_ERROR, TRUE, "Error: Unable to locate dependency_period '%s' for %s->%s host dependency\n",
+			  dependency_period, parent->name, child->name);
+		return NULL ;
+	}
 
-	/* duplicate vars */
-	if((new_hostdependency->dependent_host_name = (char *)strdup(dependent_host_name)) == NULL)
-		result = ERROR;
-	if((new_hostdependency->host_name = (char *)strdup(host_name)) == NULL)
-		result = ERROR;
-	if(dependency_period) {
-		if((new_hostdependency->dependency_period = (char *)strdup(dependency_period)) == NULL)
+	new_hostdependency = &hostdependency_list[num_objects.hostdependencies];
+
+#ifndef NSCGI
+	if(dependency_type == NOTIFICATION_DEPENDENCY) {
+		if(add_object_to_objectlist(&child->notify_deps, new_hostdependency) != OK)
 			result = ERROR;
 		}
+	else {
+		if(add_object_to_objectlist(&child->exec_deps, new_hostdependency) != OK)
+			result = ERROR;
+		}
+
+	new_hostdependency->dependent_host_ptr = child;
+	new_hostdependency->master_host_ptr = parent;
+	new_hostdependency->dependency_period_ptr = tp;
+#endif
+
+	/* assign vars. Objects are immutable, so no need to copy */
+	new_hostdependency->dependent_host_name = child->name;
+	new_hostdependency->host_name = parent->name;
+	if(tp)
+		new_hostdependency->dependency_period = tp->name;
 
 	new_hostdependency->dependency_type = (dependency_type == EXECUTION_DEPENDENCY) ? EXECUTION_DEPENDENCY : NOTIFICATION_DEPENDENCY;
 	new_hostdependency->inherits_parent = (inherits_parent > 0) ? TRUE : FALSE;
@@ -2102,43 +1855,16 @@ hostdependency *add_host_dependency(char *dependent_host_name, char *host_name, 
 	new_hostdependency->fail_on_down = (fail_on_down == 1) ? TRUE : FALSE;
 	new_hostdependency->fail_on_unreachable = (fail_on_unreachable == 1) ? TRUE : FALSE;
 	new_hostdependency->fail_on_pending = (fail_on_pending == 1) ? TRUE : FALSE;
-#ifdef NSCORE
-	new_hostdependency->circular_path_checked = FALSE;
-	new_hostdependency->contains_circular_path = FALSE;
-#endif
-
-	/* add new host dependency to skiplist */
-	if(result == OK) {
-		result = skiplist_insert(object_skiplists[HOSTDEPENDENCY_SKIPLIST], (void *)new_hostdependency);
-		switch(result) {
-			case SKIPLIST_OK:
-				result = OK;
-				break;
-			default:
-				logit(NSLOG_CONFIG_ERROR, TRUE, "Error: Could not add host dependency to skiplist\n");
-				result = ERROR;
-				break;
-			}
-		}
 
 	/* handle errors */
 	if(result == ERROR) {
-		my_free(new_hostdependency->host_name);
-		my_free(new_hostdependency->dependent_host_name);
 		my_free(new_hostdependency);
 		return NULL;
 		}
 
-	/* host dependencies are sorted alphabetically, so add new items to tail of list */
-	if(hostdependency_list == NULL) {
-		hostdependency_list = new_hostdependency;
-		hostdependency_list_tail = hostdependency_list;
-		}
-	else {
-		hostdependency_list_tail->next = new_hostdependency;
-		hostdependency_list_tail = new_hostdependency;
-		}
-
+	new_hostdependency->id = num_objects.hostdependencies++;
+	if(new_hostdependency->id)
+		hostdependency_list[new_hostdependency->id - 1].next = new_hostdependency;
 	return new_hostdependency;
 	}
 
@@ -2147,30 +1873,38 @@ hostdependency *add_host_dependency(char *dependent_host_name, char *host_name, 
 /* add a new host escalation to the list in memory */
 hostescalation *add_hostescalation(char *host_name, int first_notification, int last_notification, double notification_interval, char *escalation_period, int escalate_on_down, int escalate_on_unreachable, int escalate_on_recovery) {
 	hostescalation *new_hostescalation = NULL;
-	int result = OK;
+	host *h;
+	timeperiod *tp = NULL;
 
 	/* make sure we have the data we need */
-	if(host_name == NULL || !strcmp(host_name, "")) {
+	if(host_name == NULL || !*host_name) {
 		logit(NSLOG_CONFIG_ERROR, TRUE, "Error: Host escalation host name is NULL\n");
 		return NULL;
 		}
-
-#ifdef TEST
-	printf("NEW HST ESCALATION: %s = %d/%d/%.3f\n", host_name, first_notification, last_notification, notification_interval);
-#endif
-
-	/* allocate memory for a new host escalation entry */
-	if((new_hostescalation = calloc(1, sizeof(hostescalation))) == NULL)
+	if (!(h = find_host(host_name))) {
+		logit(NSLOG_CONFIG_ERROR, TRUE, "Error: Host '%s' has an escalation, but is not defined anywhere!\n", host_name);
 		return NULL;
-
-	/* duplicate vars */
-	if((new_hostescalation->host_name = (char *)strdup(host_name)) == NULL)
-		result = ERROR;
-	if(escalation_period) {
-		if((new_hostescalation->escalation_period = (char *)strdup(escalation_period)) == NULL)
-			result = ERROR;
+		}
+	if (escalation_period && !(tp = find_timeperiod(escalation_period))) {
+		logit(NSLOG_CONFIG_ERROR, TRUE, "Error: Unable to locate timeperiod '%s' for hostescalation '%s'\n",
+			  escalation_period, host_name);
+		return NULL;
 		}
 
+	new_hostescalation = &hostescalation_list[num_objects.hostescalations];
+
+	/* add the escalation to its host */
+	if (add_object_to_objectlist(&h->escalation_list, new_hostescalation) != OK) {
+		logit(NSLOG_CONFIG_ERROR, TRUE, "Error: Could not add hostescalation to host '%s'\n", host_name);
+		return NULL;
+		}
+
+	/* assign vars. Object names are immutable, so no need to copy */
+	new_hostescalation->host_name = h->name;
+	new_hostescalation->escalation_period = tp ? tp->name : NULL;
+#ifndef NSCGI
+	new_hostescalation->escalation_period_ptr = tp;
+#endif
 	new_hostescalation->first_notification = first_notification;
 	new_hostescalation->last_notification = last_notification;
 	new_hostescalation->notification_interval = (notification_interval <= 0) ? 0 : notification_interval;
@@ -2178,38 +1912,9 @@ hostescalation *add_hostescalation(char *host_name, int first_notification, int 
 	new_hostescalation->escalate_on_down = (escalate_on_down > 0) ? TRUE : FALSE;
 	new_hostescalation->escalate_on_unreachable = (escalate_on_unreachable > 0) ? TRUE : FALSE;
 
-	/* add new hostescalation to skiplist */
-	if(result == OK) {
-		result = skiplist_insert(object_skiplists[HOSTESCALATION_SKIPLIST], (void *)new_hostescalation);
-		switch(result) {
-			case SKIPLIST_OK:
-				result = OK;
-				break;
-			default:
-				logit(NSLOG_CONFIG_ERROR, TRUE, "Error: Could not add hostescalation '%s' to skiplist\n", host_name);
-				result = ERROR;
-				break;
-			}
-		}
-
-	/* handle errors */
-	if(result == ERROR) {
-		my_free(new_hostescalation->host_name);
-		my_free(new_hostescalation->escalation_period);
-		my_free(new_hostescalation);
-		return NULL;
-		}
-
-	/* host escalations are sorted alphabetically, so add new items to tail of list */
-	if(hostescalation_list == NULL) {
-		hostescalation_list = new_hostescalation;
-		hostescalation_list_tail = hostescalation_list;
-		}
-	else {
-		hostescalation_list_tail->next = new_hostescalation;
-		hostescalation_list_tail = new_hostescalation;
-		}
-
+	new_hostescalation->id = num_objects.hostescalations++;
+	if(new_hostescalation->id)
+		hostescalation_list[new_hostescalation->id - 1].next = new_hostescalation;
 	return new_hostescalation;
 	}
 
@@ -2218,11 +1923,16 @@ hostescalation *add_hostescalation(char *host_name, int first_notification, int 
 /* adds a contact group to a host escalation */
 contactgroupsmember *add_contactgroup_to_hostescalation(hostescalation *he, char *group_name) {
 	contactgroupsmember *new_contactgroupsmember = NULL;
-	int result = OK;
+	contactgroup *cg;
 
 	/* bail out if we weren't given the data we need */
-	if(he == NULL || (group_name == NULL || !strcmp(group_name, ""))) {
+	if(he == NULL || group_name == NULL || !*group_name) {
 		logit(NSLOG_CONFIG_ERROR, TRUE, "Error: Host escalation or contactgroup name is NULL\n");
+		return NULL;
+		}
+	if(!(cg = find_contactgroup(group_name))) {
+		logit(NSLOG_CONFIG_ERROR, TRUE, "Error: Unable to locate contactgroup '%s' specified for hostescalation for host '%s'\n",
+			  group_name, he->host_name);
 		return NULL;
 		}
 
@@ -2230,16 +1940,8 @@ contactgroupsmember *add_contactgroup_to_hostescalation(hostescalation *he, char
 	if((new_contactgroupsmember = (contactgroupsmember *)calloc(1, sizeof(contactgroupsmember))) == NULL)
 		return NULL;
 
-	/* duplicate vars */
-	if((new_contactgroupsmember->group_name = (char *)strdup(group_name)) == NULL)
-		result = ERROR;
-
-	/* handle errors */
-	if(result == ERROR) {
-		my_free(new_contactgroupsmember->group_name);
-		my_free(new_contactgroupsmember);
-		return NULL;
-		}
+	/* assign vars. Object names are immutable, so no need to copy */
+	new_contactgroupsmember->group_name = cg->group_name;
 
 	/* add this contactgroup to the host escalation */
 	new_contactgroupsmember->next = he->contact_groups;
@@ -2261,6 +1963,7 @@ contactsmember *add_contact_to_hostescalation(hostescalation *he, char *contact_
 /* adds a contact to an object */
 contactsmember *add_contact_to_object(contactsmember **object_ptr, char *contactname) {
 	contactsmember *new_contactsmember = NULL;
+	contact *c;
 
 	/* make sure we have the data we need */
 	if(object_ptr == NULL) {
@@ -2268,8 +1971,12 @@ contactsmember *add_contact_to_object(contactsmember **object_ptr, char *contact
 		return NULL;
 		}
 
-	if(contactname == NULL || !strcmp(contactname, "")) {
+	if(contactname == NULL || !*contactname) {
 		logit(NSLOG_CONFIG_ERROR, TRUE, "Error: Contact name is NULL\n");
+		return NULL;
+		}
+	if(!(c = find_contact(contactname))) {
+		logit(NSLOG_CONFIG_ERROR, TRUE, "Error: Contact '%s' is not defined anywhere!\n", contactname);
 		return NULL;
 		}
 
@@ -2278,15 +1985,11 @@ contactsmember *add_contact_to_object(contactsmember **object_ptr, char *contact
 		logit(NSLOG_CONFIG_ERROR, TRUE, "Error: Could not allocate memory for contact\n");
 		return NULL;
 		}
-	if((new_contactsmember->contact_name = (char *)strdup(contactname)) == NULL) {
-		logit(NSLOG_CONFIG_ERROR, TRUE, "Error: Could not allocate memory for contact name\n");
-		my_free(new_contactsmember);
-		return NULL;
-		}
+	new_contactsmember->contact_name = c->name;
 
 	/* set initial values */
 #ifdef NSCORE
-	new_contactsmember->contact_ptr = NULL;
+	new_contactsmember->contact_ptr = c;
 #endif
 
 	/* add the new contact to the head of the contact list */
@@ -2351,220 +2054,40 @@ customvariablesmember *add_custom_variable_to_object(customvariablesmember **obj
 /******************** OBJECT SEARCH FUNCTIONS *********************/
 /******************************************************************/
 
-/* given a timeperiod name and a starting point, find a timeperiod from the list in memory */
-timeperiod * find_timeperiod(char *name) {
-	timeperiod temp_timeperiod;
-
-	if(name == NULL)
-		return NULL;
-
-	temp_timeperiod.name = name;
-
-	return skiplist_find_first(object_skiplists[TIMEPERIOD_SKIPLIST], &temp_timeperiod, NULL);
+timeperiod *find_timeperiod(const char *name) {
+	return dkhash_get(object_hash_tables[TIMEPERIOD_SKIPLIST], name, NULL);
 	}
 
-
-/* given a host name, find it in the list in memory */
-host * find_host(char *name) {
-	host temp_host;
-
-	if(name == NULL)
-		return NULL;
-
-	temp_host.name = name;
-
-	return skiplist_find_first(object_skiplists[HOST_SKIPLIST], &temp_host, NULL);
+host *find_host(const char *name) {
+	return dkhash_get(object_hash_tables[HOST_SKIPLIST], name, NULL);
 	}
 
-
-/* find a hostgroup from the list in memory */
-hostgroup * find_hostgroup(char *name) {
-	hostgroup temp_hostgroup;
-
-	if(name == NULL)
-		return NULL;
-
-	temp_hostgroup.group_name = name;
-
-	return skiplist_find_first(object_skiplists[HOSTGROUP_SKIPLIST], &temp_hostgroup, NULL);
+hostgroup *find_hostgroup(const char *name) {
+	return dkhash_get(object_hash_tables[HOSTGROUP_SKIPLIST], name, NULL);
 	}
 
-
-/* find a servicegroup from the list in memory */
-servicegroup * find_servicegroup(char *name) {
-	servicegroup temp_servicegroup;
-
-	if(name == NULL)
-		return NULL;
-
-	temp_servicegroup.group_name = name;
-
-	return skiplist_find_first(object_skiplists[SERVICEGROUP_SKIPLIST], &temp_servicegroup, NULL);
+servicegroup *find_servicegroup(const char *name) {
+	return dkhash_get(object_hash_tables[SERVICEGROUP_SKIPLIST], name, NULL);
 	}
 
-
-/* find a contact from the list in memory */
-contact * find_contact(char *name) {
-	contact temp_contact;
-
-	if(name == NULL)
-		return NULL;
-
-	temp_contact.name = name;
-
-	return skiplist_find_first(object_skiplists[CONTACT_SKIPLIST], &temp_contact, NULL);
+contact *find_contact(const char *name) {
+	return dkhash_get(object_hash_tables[CONTACT_SKIPLIST], name, NULL);
 	}
 
-
-/* find a contact group from the list in memory */
-contactgroup * find_contactgroup(char *name) {
-	contactgroup temp_contactgroup;
-
-	if(name == NULL)
-		return NULL;
-
-	temp_contactgroup.group_name = name;
-
-	return skiplist_find_first(object_skiplists[CONTACTGROUP_SKIPLIST], &temp_contactgroup, NULL);
+contactgroup *find_contactgroup(const char *name) {
+	return dkhash_get(object_hash_tables[CONTACTGROUP_SKIPLIST], name, NULL);
 	}
 
-
-/* given a command name, find a command from the list in memory */
-command * find_command(char *name) {
-	command temp_command;
-
-	if(name == NULL)
-		return NULL;
-
-	temp_command.name = name;
-
-	return skiplist_find_first(object_skiplists[COMMAND_SKIPLIST], &temp_command, NULL);
+command *find_command(const char *name) {
+	return dkhash_get(object_hash_tables[COMMAND_SKIPLIST], name, NULL);
 	}
 
-
-/* given a host/service name, find the service in the list in memory */
-service * find_service(char *host_name, char *svc_desc) {
-	service temp_service;
-
-	if(host_name == NULL || svc_desc == NULL)
-		return NULL;
-
-	temp_service.host_name = host_name;
-	temp_service.description = svc_desc;
-
-	return skiplist_find_first(object_skiplists[SERVICE_SKIPLIST], &temp_service, NULL);
+service *find_service(const char *host_name, const char *svc_desc) {
+	return dkhash_get(object_hash_tables[SERVICE_SKIPLIST], host_name, svc_desc);
 	}
 
 
 
-
-/******************************************************************/
-/******************* OBJECT TRAVERSAL FUNCTIONS *******************/
-/******************************************************************/
-
-hostescalation *get_first_hostescalation_by_host(char *host_name, void **ptr) {
-	hostescalation temp_hostescalation;
-
-	if(host_name == NULL)
-		return NULL;
-
-	temp_hostescalation.host_name = host_name;
-
-	return skiplist_find_first(object_skiplists[HOSTESCALATION_SKIPLIST], &temp_hostescalation, ptr);
-	}
-
-
-hostescalation *get_next_hostescalation_by_host(char *host_name, void **ptr) {
-	hostescalation temp_hostescalation;
-
-	if(host_name == NULL)
-		return NULL;
-
-	temp_hostescalation.host_name = host_name;
-
-	return skiplist_find_next(object_skiplists[HOSTESCALATION_SKIPLIST], &temp_hostescalation, ptr);
-	}
-
-
-serviceescalation *get_first_serviceescalation_by_service(char *host_name, char *svc_description, void **ptr) {
-	serviceescalation temp_serviceescalation;
-
-	if(host_name == NULL || svc_description == NULL)
-		return NULL;
-
-	temp_serviceescalation.host_name = host_name;
-	temp_serviceescalation.description = svc_description;
-
-	return skiplist_find_first(object_skiplists[SERVICEESCALATION_SKIPLIST], &temp_serviceescalation, ptr);
-	}
-
-
-serviceescalation *get_next_serviceescalation_by_service(char *host_name, char *svc_description, void **ptr) {
-	serviceescalation temp_serviceescalation;
-
-	if(host_name == NULL || svc_description == NULL)
-		return NULL;
-
-	temp_serviceescalation.host_name = host_name;
-	temp_serviceescalation.description = svc_description;
-
-	return skiplist_find_next(object_skiplists[SERVICEESCALATION_SKIPLIST], &temp_serviceescalation, ptr);
-	}
-
-
-hostdependency *get_first_hostdependency_by_dependent_host(char *host_name, void **ptr) {
-	hostdependency temp_hostdependency;
-
-	if(host_name == NULL)
-		return NULL;
-
-	temp_hostdependency.dependent_host_name = host_name;
-
-	return skiplist_find_first(object_skiplists[HOSTDEPENDENCY_SKIPLIST], &temp_hostdependency, ptr);
-	}
-
-
-hostdependency *get_next_hostdependency_by_dependent_host(char *host_name, void **ptr) {
-	hostdependency temp_hostdependency;
-
-	if(host_name == NULL || ptr == NULL)
-		return NULL;
-
-	temp_hostdependency.dependent_host_name = host_name;
-
-	return skiplist_find_next(object_skiplists[HOSTDEPENDENCY_SKIPLIST], &temp_hostdependency, ptr);
-	}
-
-
-servicedependency *get_first_servicedependency_by_dependent_service(char *host_name, char *svc_description, void **ptr) {
-	servicedependency temp_servicedependency;
-
-	if(host_name == NULL || svc_description == NULL)
-		return NULL;
-
-	temp_servicedependency.dependent_host_name = host_name;
-	temp_servicedependency.dependent_service_description = svc_description;
-
-	return skiplist_find_first(object_skiplists[SERVICEDEPENDENCY_SKIPLIST], &temp_servicedependency, ptr);
-	}
-
-
-servicedependency *get_next_servicedependency_by_dependent_service(char *host_name, char *svc_description, void **ptr) {
-	servicedependency temp_servicedependency;
-
-	if(host_name == NULL || svc_description == NULL || ptr == NULL)
-		return NULL;
-
-	temp_servicedependency.dependent_host_name = host_name;
-	temp_servicedependency.dependent_service_description = svc_description;
-
-	return skiplist_find_next(object_skiplists[SERVICEDEPENDENCY_SKIPLIST], &temp_servicedependency, ptr);
-
-	return NULL;
-	}
-
-
-#ifdef NSCORE
 /* adds a object to a list of objects */
 int add_object_to_objectlist(objectlist **list, void *object_ptr) {
 	objectlist *temp_item = NULL;
@@ -2615,7 +2138,6 @@ int free_objectlist(objectlist **temp_list) {
 
 	return OK;
 	}
-#endif
 
 
 
@@ -2664,68 +2186,28 @@ int is_host_immediate_parent_of_host(host *child_host, host *parent_host) {
 	return FALSE;
 	}
 
+#ifdef NSCGI
+int hostsmember_elements(hostsmember *list)
+{
+	int elems = 0;
+	for (; list; list = list->next)
+		elems++;
+	return elems;
+}
 
 /* returns a count of the immediate children for a given host */
 /* NOTE: This function is only used by the CGIS */
 int number_of_immediate_child_hosts(host *hst) {
-	int children = 0;
-	host *temp_host = NULL;
-
-	for(temp_host = host_list; temp_host != NULL; temp_host = temp_host->next) {
-		if(is_host_immediate_child_of_host(hst, temp_host) == TRUE)
-			children++;
-		}
-
-	return children;
-	}
-
-
-/* returns a count of the total children for a given host */
-/* NOTE: This function is only used by the CGIS */
-int number_of_total_child_hosts(host *hst) {
-	int children = 0;
-	host *temp_host = NULL;
-
-	for(temp_host = host_list; temp_host != NULL; temp_host = temp_host->next) {
-		if(is_host_immediate_child_of_host(hst, temp_host) == TRUE)
-			children += number_of_total_child_hosts(temp_host) + 1;
-		}
-
-	return children;
+	return hst == NULL ? 0 : hostsmember_elements(hst->child_hosts);
 	}
 
 
 /* get the number of immediate parent hosts for a given host */
 /* NOTE: This function is only used by the CGIS */
 int number_of_immediate_parent_hosts(host *hst) {
-	int parents = 0;
-	host *temp_host = NULL;
-
-	for(temp_host = host_list; temp_host != NULL; temp_host = temp_host->next) {
-		if(is_host_immediate_parent_of_host(hst, temp_host) == TRUE) {
-			parents++;
-			}
-		}
-
-	return parents;
+	return hst == NULL ? 0 : hostsmember_elements(hst->parent_hosts);
 	}
-
-
-/* get the total number of parent hosts for a given host */
-/* NOTE: This function is only used by the CGIS */
-int number_of_total_parent_hosts(host *hst) {
-	int parents = 0;
-	host *temp_host = NULL;
-
-	for(temp_host = host_list; temp_host != NULL; temp_host = temp_host->next) {
-		if(is_host_immediate_parent_of_host(hst, temp_host) == TRUE) {
-			parents += number_of_total_parent_hosts(temp_host) + 1;
-			}
-		}
-
-	return parents;
-	}
-
+#endif
 
 /*  tests whether a host is a member of a particular hostgroup */
 /* NOTE: This function is only used by the CGIS */
@@ -2872,11 +2354,11 @@ int is_escalated_contact_for_host(host *hst, contact *cntct) {
 	hostescalation *temp_hostescalation = NULL;
 	contactgroupsmember *temp_contactgroupsmember = NULL;
 	contactgroup *temp_contactgroup = NULL;
-	void *ptr = NULL;
-
+	objectlist *list;
 
 	/* search all host escalations */
-	for(temp_hostescalation = get_first_hostescalation_by_host(hst->name, &ptr); temp_hostescalation != NULL; temp_hostescalation = get_next_hostescalation_by_host(hst->name, &ptr)) {
+	for(list = hst->escalation_list; list; list = list->next) {
+		temp_hostescalation = (hostescalation *)list->object_ptr;
 
 		/* search all contacts of this host escalation */
 		for(temp_contactsmember = temp_hostescalation->contacts; temp_contactsmember != NULL; temp_contactsmember = temp_contactsmember->next) {
@@ -2958,10 +2440,11 @@ int is_escalated_contact_for_service(service *svc, contact *cntct) {
 	contact *temp_contact = NULL;
 	contactgroupsmember *temp_contactgroupsmember = NULL;
 	contactgroup *temp_contactgroup = NULL;
-	void *ptr = NULL;
+	objectlist *list;
 
 	/* search all the service escalations */
-	for(temp_serviceescalation = get_first_serviceescalation_by_service(svc->host_name, svc->description, &ptr); temp_serviceescalation != NULL; temp_serviceescalation = get_next_serviceescalation_by_service(svc->host_name, svc->description, &ptr)) {
+	for(list = svc->escalation_list; list; list = list->next) {
+		temp_serviceescalation = (serviceescalation *)list->object_ptr;
 
 		/* search all contacts of this service escalation */
 		for(temp_contactsmember = temp_serviceescalation->contacts; temp_contactsmember != NULL; temp_contactsmember = temp_contactsmember->next) {
@@ -2994,114 +2477,6 @@ int is_escalated_contact_for_service(service *svc, contact *cntct) {
 	}
 
 
-#ifdef NSCORE
-
-/* checks to see if there exists a circular dependency for a service */
-int check_for_circular_servicedependency_path(servicedependency *root_dep, servicedependency *dep, int dependency_type) {
-	servicedependency *temp_sd = NULL;
-
-	if(root_dep == NULL || dep == NULL)
-		return FALSE;
-
-	/* this is not the proper dependency type */
-	if(root_dep->dependency_type != dependency_type || dep->dependency_type != dependency_type)
-		return FALSE;
-
-	/* don't go into a loop, don't bother checking anymore if we know this dependency already has a loop */
-	if(root_dep->contains_circular_path == TRUE)
-		return TRUE;
-
-	/* dependency has already been checked - there is a path somewhere, but it may not be for this particular dep... */
-	/* this should speed up detection for some loops */
-	if(dep->circular_path_checked == TRUE)
-		return FALSE;
-
-	/* set the check flag so we don't get into an infinite loop */
-	dep->circular_path_checked = TRUE;
-
-	/* is this service dependent on the root service? */
-	if(dep != root_dep) {
-		if(root_dep->dependent_service_ptr == dep->master_service_ptr) {
-			root_dep->contains_circular_path = TRUE;
-			dep->contains_circular_path = TRUE;
-			return TRUE;
-			}
-		}
-
-	/* notification dependencies are ok at this point as long as they don't inherit */
-	if(dependency_type == NOTIFICATION_DEPENDENCY && dep->inherits_parent == FALSE)
-		return FALSE;
-
-	/* check all parent dependencies */
-	for(temp_sd = servicedependency_list; temp_sd != NULL; temp_sd = temp_sd->next) {
-
-		/* only check parent dependencies */
-		if(dep->master_service_ptr != temp_sd->dependent_service_ptr)
-			continue;
-
-		if(check_for_circular_servicedependency_path(root_dep, temp_sd, dependency_type) == TRUE)
-			return TRUE;
-		}
-
-	return FALSE;
-	}
-
-
-/* checks to see if there exists a circular dependency for a host */
-int check_for_circular_hostdependency_path(hostdependency *root_dep, hostdependency *dep, int dependency_type) {
-	hostdependency *temp_hd = NULL;
-
-	if(root_dep == NULL || dep == NULL)
-		return FALSE;
-
-	/* this is not the proper dependency type */
-	if(root_dep->dependency_type != dependency_type || dep->dependency_type != dependency_type)
-		return FALSE;
-
-	/* don't go into a loop, don't bother checking anymore if we know this dependency already has a loop */
-	if(root_dep->contains_circular_path == TRUE)
-		return TRUE;
-
-	/* dependency has already been checked - there is a path somewhere, but it may not be for this particular dep... */
-	/* this should speed up detection for some loops */
-	if(dep->circular_path_checked == TRUE)
-		return FALSE;
-
-	/* set the check flag so we don't get into an infinite loop */
-	dep->circular_path_checked = TRUE;
-
-	/* is this host dependent on the root host? */
-	if(dep != root_dep) {
-		if(root_dep->dependent_host_ptr == dep->master_host_ptr) {
-			root_dep->contains_circular_path = TRUE;
-			dep->contains_circular_path = TRUE;
-			return TRUE;
-			}
-		}
-
-	/* notification dependencies are ok at this point as long as they don't inherit */
-	if(dependency_type == NOTIFICATION_DEPENDENCY && dep->inherits_parent == FALSE)
-		return FALSE;
-
-	/* check all parent dependencies */
-	for(temp_hd = hostdependency_list; temp_hd != NULL; temp_hd = temp_hd->next) {
-
-		/* only check parent dependencies */
-		if(dep->master_host_ptr != temp_hd->dependent_host_ptr)
-			continue;
-
-		if(check_for_circular_hostdependency_path(root_dep, temp_hd, dependency_type) == TRUE)
-			return TRUE;
-		}
-
-	return FALSE;
-	}
-
-#endif
-
-
-
-
 /******************************************************************/
 /******************* OBJECT DELETION FUNCTIONS ********************/
 /******************************************************************/
@@ -3109,55 +2484,41 @@ int check_for_circular_hostdependency_path(hostdependency *root_dep, hostdepende
 
 /* free all allocated memory for objects */
 int free_object_data(void) {
-	timeperiod *this_timeperiod = NULL;
-	timeperiod *next_timeperiod = NULL;
 	daterange *this_daterange = NULL;
 	daterange *next_daterange = NULL;
 	timerange *this_timerange = NULL;
 	timerange *next_timerange = NULL;
 	timeperiodexclusion *this_timeperiodexclusion = NULL;
 	timeperiodexclusion *next_timeperiodexclusion = NULL;
-	host *this_host = NULL;
-	host *next_host = NULL;
 	hostsmember *this_hostsmember = NULL;
 	hostsmember *next_hostsmember = NULL;
-	hostgroup *this_hostgroup = NULL;
-	hostgroup *next_hostgroup = NULL;
-	servicegroup *this_servicegroup = NULL;
-	servicegroup *next_servicegroup = NULL;
 	servicesmember *this_servicesmember = NULL;
 	servicesmember *next_servicesmember = NULL;
-	contact	*this_contact = NULL;
-	contact *next_contact = NULL;
-	contactgroup *this_contactgroup = NULL;
-	contactgroup *next_contactgroup = NULL;
 	contactsmember *this_contactsmember = NULL;
 	contactsmember *next_contactsmember = NULL;
 	contactgroupsmember *this_contactgroupsmember = NULL;
 	contactgroupsmember *next_contactgroupsmember = NULL;
 	customvariablesmember *this_customvariablesmember = NULL;
 	customvariablesmember *next_customvariablesmember = NULL;
-	service *this_service = NULL;
-	service *next_service = NULL;
-	command *this_command = NULL;
-	command *next_command = NULL;
 	commandsmember *this_commandsmember = NULL;
 	commandsmember *next_commandsmember = NULL;
-	serviceescalation *this_serviceescalation = NULL;
-	serviceescalation *next_serviceescalation = NULL;
-	servicedependency *this_servicedependency = NULL;
-	servicedependency *next_servicedependency = NULL;
-	hostdependency *this_hostdependency = NULL;
-	hostdependency *next_hostdependency = NULL;
-	hostescalation *this_hostescalation = NULL;
-	hostescalation *next_hostescalation = NULL;
 	register int x = 0;
 	register int i = 0;
 
 
+	/*
+	 * kill off hash tables so lingering modules don't look stuff up
+	 * while we're busy removing it.
+	 */
+	for (i = 0; i < ARRAY_SIZE(object_hash_tables); i++) {
+		dkhash_table *t = object_hash_tables[i];
+		object_hash_tables[i] = NULL;
+		dkhash_destroy(t);
+	}
+
 	/**** free memory for the timeperiod list ****/
-	this_timeperiod = timeperiod_list;
-	while(this_timeperiod != NULL) {
+	for (i = 0; i < num_objects.timeperiods; i++) {
+		timeperiod *this_timeperiod = &timeperiod_list[i];
 
 		/* free the exception time ranges contained in this timeperiod */
 		for(x = 0; x < DATERANGE_TYPES; x++) {
@@ -3188,22 +2549,17 @@ int free_object_data(void) {
 			my_free(this_timeperiodexclusion);
 			}
 
-		next_timeperiod = this_timeperiod->next;
 		my_free(this_timeperiod->name);
 		my_free(this_timeperiod->alias);
-		my_free(this_timeperiod);
-		this_timeperiod = next_timeperiod;
 		}
 
 	/* reset pointers */
-	timeperiod_list = NULL;
+	my_free(timeperiod_list);
 
 
 	/**** free memory for the host list ****/
-	this_host = host_list;
-	while(this_host != NULL) {
-
-		next_host = this_host->next;
+	for (i = 0; i < num_objects.hosts; i++) {
+		host *this_host = &host_list[i];
 
 		/* free memory for parent hosts */
 		this_hostsmember = this_host->parent_hosts;
@@ -3218,7 +2574,6 @@ int free_object_data(void) {
 		this_hostsmember = this_host->child_hosts;
 		while(this_hostsmember != NULL) {
 			next_hostsmember = this_hostsmember->next;
-			my_free(this_hostsmember->host_name);
 			my_free(this_hostsmember);
 			this_hostsmember = next_hostsmember;
 			}
@@ -3227,8 +2582,6 @@ int free_object_data(void) {
 		this_servicesmember = this_host->services;
 		while(this_servicesmember != NULL) {
 			next_servicesmember = this_servicesmember->next;
-			my_free(this_servicesmember->host_name);
-			my_free(this_servicesmember->service_description);
 			my_free(this_servicesmember);
 			this_servicesmember = next_servicesmember;
 			}
@@ -3237,7 +2590,6 @@ int free_object_data(void) {
 		this_contactgroupsmember = this_host->contact_groups;
 		while(this_contactgroupsmember != NULL) {
 			next_contactgroupsmember = this_contactgroupsmember->next;
-			my_free(this_contactgroupsmember->group_name);
 			my_free(this_contactgroupsmember);
 			this_contactgroupsmember = next_contactgroupsmember;
 			}
@@ -3246,7 +2598,6 @@ int free_object_data(void) {
 		this_contactsmember = this_host->contacts;
 		while(this_contactsmember != NULL) {
 			next_contactsmember = this_contactsmember->next;
-			my_free(this_contactsmember->contact_name);
 			my_free(this_contactsmember);
 			this_contactsmember = next_contactsmember;
 			}
@@ -3272,11 +2623,12 @@ int free_object_data(void) {
 
 		free_objectlist(&this_host->hostgroups_ptr);
 #endif
-		my_free(this_host->check_period);
+		free_objectlist(&this_host->notify_deps);
+		free_objectlist(&this_host->exec_deps);
+		free_objectlist(&this_host->escalation_list);
 		my_free(this_host->host_check_command);
 		my_free(this_host->event_handler);
 		my_free(this_host->failure_prediction_options);
-		my_free(this_host->notification_period);
 		my_free(this_host->notes);
 		my_free(this_host->notes_url);
 		my_free(this_host->action_url);
@@ -3284,17 +2636,15 @@ int free_object_data(void) {
 		my_free(this_host->icon_image_alt);
 		my_free(this_host->vrml_image);
 		my_free(this_host->statusmap_image);
-		my_free(this_host);
-		this_host = next_host;
 		}
 
 	/* reset pointers */
-	host_list = NULL;
+	my_free(host_list);
 
 
 	/**** free memory for the host group list ****/
-	this_hostgroup = hostgroup_list;
-	while(this_hostgroup != NULL) {
+	for (i = 0; i < num_objects.hostgroups; i++) {
+		hostgroup *this_hostgroup = &hostgroup_list[i];
 
 		/* free memory for the group members */
 		this_hostsmember = this_hostgroup->members;
@@ -3305,23 +2655,19 @@ int free_object_data(void) {
 			this_hostsmember = next_hostsmember;
 			}
 
-		next_hostgroup = this_hostgroup->next;
 		my_free(this_hostgroup->group_name);
 		my_free(this_hostgroup->alias);
 		my_free(this_hostgroup->notes);
 		my_free(this_hostgroup->notes_url);
 		my_free(this_hostgroup->action_url);
-		my_free(this_hostgroup);
-		this_hostgroup = next_hostgroup;
 		}
 
 	/* reset pointers */
-	hostgroup_list = NULL;
-
+	my_free(hostgroup_list);
 
 	/**** free memory for the service group list ****/
-	this_servicegroup = servicegroup_list;
-	while(this_servicegroup != NULL) {
+	for (i = 0; i < num_objects.servicegroups; i++) {
+		servicegroup *this_servicegroup = &servicegroup_list[i];
 
 		/* free memory for the group members */
 		this_servicesmember = this_servicegroup->members;
@@ -3333,23 +2679,19 @@ int free_object_data(void) {
 			this_servicesmember = next_servicesmember;
 			}
 
-		next_servicegroup = this_servicegroup->next;
 		my_free(this_servicegroup->group_name);
 		my_free(this_servicegroup->alias);
 		my_free(this_servicegroup->notes);
 		my_free(this_servicegroup->notes_url);
 		my_free(this_servicegroup->action_url);
-		my_free(this_servicegroup);
-		this_servicegroup = next_servicegroup;
 		}
 
 	/* reset pointers */
-	servicegroup_list = NULL;
-
+	my_free(servicegroup_list);
 
 	/**** free memory for the contact list ****/
-	this_contact = contact_list;
-	while(this_contact != NULL) {
+	for (i = 0; i < num_objects.contacts; i++) {
+		contact *this_contact = &contact_list[i];
 
 		/* free memory for the host notification commands */
 		this_commandsmember = this_contact->host_notification_commands;
@@ -3381,31 +2723,25 @@ int free_object_data(void) {
 			this_customvariablesmember = next_customvariablesmember;
 			}
 
-		next_contact = this_contact->next;
 		my_free(this_contact->name);
 		my_free(this_contact->alias);
 		my_free(this_contact->email);
 		my_free(this_contact->pager);
 		for(i = 0; i < MAX_CONTACT_ADDRESSES; i++)
 			my_free(this_contact->address[i]);
-		my_free(this_contact->host_notification_period);
-		my_free(this_contact->service_notification_period);
 
 #ifdef NSCORE
 		free_objectlist(&this_contact->contactgroups_ptr);
 #endif
-
-		my_free(this_contact);
-		this_contact = next_contact;
 		}
 
 	/* reset pointers */
-	contact_list = NULL;
+	my_free(contact_list);
 
 
 	/**** free memory for the contact group list ****/
-	this_contactgroup = contactgroup_list;
-	while(this_contactgroup != NULL) {
+	for (i = 0; i < num_objects.contactgroups; i++) {
+		contactgroup *this_contactgroup = &contactgroup_list[i];
 
 		/* free memory for the group members */
 		this_contactsmember = this_contactgroup->members;
@@ -3416,28 +2752,22 @@ int free_object_data(void) {
 			this_contactsmember = next_contactsmember;
 			}
 
-		next_contactgroup = this_contactgroup->next;
 		my_free(this_contactgroup->group_name);
 		my_free(this_contactgroup->alias);
-		my_free(this_contactgroup);
-		this_contactgroup = next_contactgroup;
 		}
 
 	/* reset pointers */
-	contactgroup_list = NULL;
+	my_free(contactgroup_list);
 
 
 	/**** free memory for the service list ****/
-	this_service = service_list;
-	while(this_service != NULL) {
-
-		next_service = this_service->next;
+	for (i = 0; i < num_objects.services; i++) {
+		service *this_service = &service_list[i];
 
 		/* free memory for contact groups */
 		this_contactgroupsmember = this_service->contact_groups;
 		while(this_contactgroupsmember != NULL) {
 			next_contactgroupsmember = this_contactgroupsmember->next;
-			my_free(this_contactgroupsmember->group_name);
 			my_free(this_contactgroupsmember);
 			this_contactgroupsmember = next_contactgroupsmember;
 			}
@@ -3461,7 +2791,6 @@ int free_object_data(void) {
 			this_customvariablesmember = next_customvariablesmember;
 			}
 
-		my_free(this_service->host_name);
 		my_free(this_service->description);
 		my_free(this_service->display_name);
 		my_free(this_service->service_check_command);
@@ -3475,8 +2804,9 @@ int free_object_data(void) {
 
 		free_objectlist(&this_service->servicegroups_ptr);
 #endif
-		my_free(this_service->notification_period);
-		my_free(this_service->check_period);
+		free_objectlist(&this_service->notify_deps);
+		free_objectlist(&this_service->exec_deps);
+		free_objectlist(&this_service->escalation_list);
 		my_free(this_service->event_handler);
 		my_free(this_service->failure_prediction_options);
 		my_free(this_service->notes);
@@ -3484,37 +2814,31 @@ int free_object_data(void) {
 		my_free(this_service->action_url);
 		my_free(this_service->icon_image);
 		my_free(this_service->icon_image_alt);
-		my_free(this_service);
-		this_service = next_service;
 		}
 
 	/* reset pointers */
-	service_list = NULL;
+	my_free(service_list);
 
 
-	/**** free memory for the command list ****/
-	this_command = command_list;
-	while(this_command != NULL) {
-		next_command = this_command->next;
+	/**** free command memory ****/
+	for (i = 0; i < num_objects.commands; i++) {
+		command *this_command = &command_list[i];
 		my_free(this_command->name);
 		my_free(this_command->command_line);
-		my_free(this_command);
-		this_command = next_command;
 		}
 
 	/* reset pointers */
-	command_list = NULL;
+	my_free(command_list);
 
 
-	/**** free memory for the service escalation list ****/
-	this_serviceescalation = serviceescalation_list;
-	while(this_serviceescalation != NULL) {
+	/**** free service escalation memory ****/
+	for (i = 0; i < num_objects.serviceescalations; i++) {
+		serviceescalation *this_serviceescalation = &serviceescalation_list[i];
 
 		/* free memory for the contact group members */
 		this_contactgroupsmember = this_serviceescalation->contact_groups;
 		while(this_contactgroupsmember != NULL) {
 			next_contactgroupsmember = this_contactgroupsmember->next;
-			my_free(this_contactgroupsmember->group_name);
 			my_free(this_contactgroupsmember);
 			this_contactgroupsmember = next_contactgroupsmember;
 			}
@@ -3523,64 +2847,31 @@ int free_object_data(void) {
 		this_contactsmember = this_serviceescalation->contacts;
 		while(this_contactsmember != NULL) {
 			next_contactsmember = this_contactsmember->next;
-			my_free(this_contactsmember->contact_name);
 			my_free(this_contactsmember);
 			this_contactsmember = next_contactsmember;
 			}
-
-		next_serviceescalation = this_serviceescalation->next;
-		my_free(this_serviceescalation->host_name);
-		my_free(this_serviceescalation->description);
-		my_free(this_serviceescalation->escalation_period);
-		my_free(this_serviceescalation);
-		this_serviceescalation = next_serviceescalation;
 		}
 
 	/* reset pointers */
-	serviceescalation_list = NULL;
+	my_free(serviceescalation_list);
 
 
-	/**** free memory for the service dependency list ****/
-	this_servicedependency = servicedependency_list;
-	while(this_servicedependency != NULL) {
-		next_servicedependency = this_servicedependency->next;
-		my_free(this_servicedependency->dependency_period);
-		my_free(this_servicedependency->dependent_host_name);
-		my_free(this_servicedependency->dependent_service_description);
-		my_free(this_servicedependency->host_name);
-		my_free(this_servicedependency->service_description);
-		my_free(this_servicedependency);
-		this_servicedependency = next_servicedependency;
-		}
-
-	/* reset pointers */
-	servicedependency_list = NULL;
+	/**** free service dependency memory ****/
+	my_free(servicedependency_list);
 
 
-	/**** free memory for the host dependency list ****/
-	this_hostdependency = hostdependency_list;
-	while(this_hostdependency != NULL) {
-		next_hostdependency = this_hostdependency->next;
-		my_free(this_hostdependency->dependency_period);
-		my_free(this_hostdependency->dependent_host_name);
-		my_free(this_hostdependency->host_name);
-		my_free(this_hostdependency);
-		this_hostdependency = next_hostdependency;
-		}
-
-	/* reset pointers */
-	hostdependency_list = NULL;
+	/**** free host dependency memory ****/
+	my_free(hostdependency_list);
 
 
-	/**** free memory for the host escalation list ****/
-	this_hostescalation = hostescalation_list;
-	while(this_hostescalation != NULL) {
+	/**** free host escalation memory ****/
+	for (i = 0; i < num_objects.hostescalations; i++) {
+		hostescalation *this_hostescalation = &hostescalation_list[i];
 
 		/* free memory for the contact group members */
 		this_contactgroupsmember = this_hostescalation->contact_groups;
 		while(this_contactgroupsmember != NULL) {
 			next_contactgroupsmember = this_contactgroupsmember->next;
-			my_free(this_contactgroupsmember->group_name);
 			my_free(this_contactgroupsmember);
 			this_contactgroupsmember = next_contactgroupsmember;
 			}
@@ -3589,24 +2880,16 @@ int free_object_data(void) {
 		this_contactsmember = this_hostescalation->contacts;
 		while(this_contactsmember != NULL) {
 			next_contactsmember = this_contactsmember->next;
-			my_free(this_contactsmember->contact_name);
 			my_free(this_contactsmember);
 			this_contactsmember = next_contactsmember;
 			}
-
-		next_hostescalation = this_hostescalation->next;
-		my_free(this_hostescalation->host_name);
-		my_free(this_hostescalation->escalation_period);
-		my_free(this_hostescalation);
-		this_hostescalation = next_hostescalation;
 		}
 
 	/* reset pointers */
-	hostescalation_list = NULL;
+	my_free(hostescalation_list);
 
-	/* free object skiplists */
-	free_object_skiplists();
+	/* we no longer have any objects */
+	memset(&num_objects, 0, sizeof(num_objects));
 
 	return OK;
 	}
-

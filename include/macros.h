@@ -2,7 +2,6 @@
  *
  * MACROS.H - Common macro functions
  * Written By: Ethan Galstad (egalstad@nagios.org)
- * Last Modified: 10-28-2007
  *
  * License:
  *
@@ -23,7 +22,6 @@
 #ifndef _MACROS_H
 #define _MACROS_H
 
-#include "compat.h"
 #include "common.h"
 #include "objects.h"
 

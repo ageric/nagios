@@ -2,10 +2,6 @@
  *
  * XRDDEFAULT.C - Default external state retention routines for Nagios
  *
- * Copyright (c) 2011-2012 Nagios Core Development Team
- * Copyright (c) 1999-2010 Ethan Galstad (egalstad@nagios.org)
- * Last Modified: 08-12-2012 [WL]
- *
  * License:
  *
  * This program is free software; you can redistribute it and/or modify
@@ -41,9 +37,6 @@
 
 #include "xrddefault.h"
 
-extern host           *host_list;
-extern service        *service_list;
-extern contact        *contact_list;
 extern comment        *comment_list;
 extern scheduled_downtime *scheduled_downtime_list;
 

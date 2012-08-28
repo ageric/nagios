@@ -2,8 +2,6 @@
  *
  * CONFIG.C - Configuration input and verification routines for Nagios
  *
- * Copyright (c) 1999-2008 Ethan Galstad (egalstad@nagios.org)
- * Last Modified: 12-14-2008
  *
  * License:
  *
@@ -180,22 +178,6 @@ extern int      child_processes_fork_twice;
 extern int      date_format;
 extern char     *use_timezone;
 
-extern contact		*contact_list;
-extern contactgroup	*contactgroup_list;
-extern host             *host_list;
-extern hostgroup	*hostgroup_list;
-extern service          *service_list;
-extern servicegroup     *servicegroup_list;
-extern command          *command_list;
-extern timeperiod       *timeperiod_list;
-extern serviceescalation *serviceescalation_list;
-extern servicedependency *servicedependency_list;
-extern hostdependency   *hostdependency_list;
-extern hostescalation   *hostescalation_list;
-
-extern host		**host_hashlist;
-extern service		**service_hashlist;
-
 extern unsigned long    max_check_result_file_age;
 
 extern char             *debug_file;
@@ -204,6 +186,29 @@ extern int              debug_verbosity;
 extern unsigned long    max_debug_file_size;
 
 extern int              allow_empty_hostgroup_assignment;
+
+/*** helpers ****/
+/*
+ * find a command with arguments still attached
+ * if we're unsuccessful, the buffer pointed to by 'name' is modified
+ * to have only the real command name (everything up until the first '!')
+ */
+static command *find_bang_command(char *name)
+{
+	char *bang;
+	command *cmd;
+
+	if (!name)
+		return NULL;
+
+	bang = strchr(name, '!');
+	if (!bang)
+		return find_command(name);
+	*bang = 0;
+	cmd = find_command(name);
+	*bang = '!';
+	return cmd;
+}
 
 
 
@@ -1461,11 +1466,7 @@ int read_resource_file(char *resource_file) {
 
 /* do a pre-flight check to make sure object relationships, etc. make sense */
 int pre_flight_check(void) {
-	host *temp_host = NULL;
 	char *buf = NULL;
-	service *temp_service = NULL;
-	command *temp_command = NULL;
-	char *temp_command_name = "";
 	int warnings = 0;
 	int errors = 0;
 	struct timeval tv[4];
@@ -1498,42 +1499,18 @@ int pre_flight_check(void) {
 	if(verify_config == TRUE)
 		printf("Checking global event handlers...\n");
 	if(global_host_event_handler != NULL) {
-
-		/* check the event handler command */
-		buf = (char *)strdup(global_host_event_handler);
-
-		/* get the command name, leave any arguments behind */
-		temp_command_name = my_strtok(buf, "!");
-
-		temp_command = find_command(temp_command_name);
-		if(temp_command == NULL) {
-			logit(NSLOG_VERIFICATION_ERROR, TRUE, "Error: Global host event handler command '%s' is not defined anywhere!", temp_command_name);
+		global_host_event_handler_ptr = find_bang_command(global_host_event_handler);
+		if (global_host_event_handler_ptr == NULL) {
+			logit(NSLOG_VERIFICATION_ERROR, TRUE, "Error: Global host event handler command '%s' is not defined anywhere!", global_host_event_handler);
 			errors++;
 			}
-
-		/* save the pointer to the command for later */
-		global_host_event_handler_ptr = temp_command;
-
-		my_free(buf);
 		}
 	if(global_service_event_handler != NULL) {
-
-		/* check the event handler command */
-		buf = (char *)strdup(global_service_event_handler);
-
-		/* get the command name, leave any arguments behind */
-		temp_command_name = my_strtok(buf, "!");
-
-		temp_command = find_command(temp_command_name);
-		if(temp_command == NULL) {
-			logit(NSLOG_VERIFICATION_ERROR, TRUE, "Error: Global service event handler command '%s' is not defined anywhere!", temp_command_name);
+		global_service_event_handler_ptr = find_bang_command(global_service_event_handler);
+		if (global_service_event_handler_ptr == NULL) {
+			logit(NSLOG_VERIFICATION_ERROR, TRUE, "Error: Global service event handler command '%s' is not defined anywhere!", global_service_event_handler);
 			errors++;
 			}
-
-		/* save the pointer to the command for later */
-		global_service_event_handler_ptr = temp_command;
-
-		my_free(buf);
 		}
 
 
@@ -1543,40 +1520,17 @@ int pre_flight_check(void) {
 	if(verify_config == TRUE)
 		printf("Checking obsessive compulsive processor commands...\n");
 	if(ocsp_command != NULL) {
-
-		buf = (char *)strdup(ocsp_command);
-
-		/* get the command name, leave any arguments behind */
-		temp_command_name = my_strtok(buf, "!");
-
-		temp_command = find_command(temp_command_name);
-		if(temp_command == NULL) {
-			logit(NSLOG_VERIFICATION_ERROR, TRUE, "Error: Obsessive compulsive service processor command '%s' is not defined anywhere!", temp_command_name);
+		ocsp_command_ptr = find_bang_command(ocsp_command);
+		if (!ocsp_command_ptr) {
+			logit(NSLOG_CONFIG_ERROR, TRUE, "Error: OCSP command '%s' is not defined anywhere!\n", ocsp_command);
 			errors++;
 			}
-
-		/* save the pointer to the command for later */
-		ocsp_command_ptr = temp_command;
-
-		my_free(buf);
 		}
 	if(ochp_command != NULL) {
-
-		buf = (char *)strdup(ochp_command);
-
-		/* get the command name, leave any arguments behind */
-		temp_command_name = my_strtok(buf, "!");
-
-		temp_command = find_command(temp_command_name);
-		if(temp_command == NULL) {
-			logit(NSLOG_VERIFICATION_ERROR, TRUE, "Error: Obsessive compulsive host processor command '%s' is not defined anywhere!", temp_command_name);
-			errors++;
-			}
-
-		/* save the pointer to the command for later */
-		ochp_command_ptr = temp_command;
-
-		my_free(buf);
+		ochp_command_ptr = find_bang_command(ochp_command);
+		logit(NSLOG_CONFIG_ERROR, TRUE, "Error: OCHP command '%s' is not defined anywhere!\n", ochp_command);
+		ochp_command_ptr = find_bang_command(ochp_command);
+		errors += ochp_command_ptr == NULL;
 		}
 
 
@@ -1614,14 +1568,6 @@ int pre_flight_check(void) {
 	if(illegal_output_chars == NULL) {
 		logit(NSLOG_VERIFICATION_WARNING, TRUE, "%s", "Warning: Nothing specified for illegal_macro_output_chars variable!\n");
 		warnings++;
-		}
-
-	/* count number of services associated with each host (we need this for flap detection)... */
-	for(temp_service = service_list; temp_service != NULL; temp_service = temp_service->next) {
-		if((temp_host = find_host(temp_service->host_name))) {
-			temp_host->total_services++;
-			temp_host->total_service_check_interval += temp_service->check_interval;
-			}
 		}
 
 	if(verify_config == TRUE) {
@@ -1677,18 +1623,10 @@ int pre_flight_object_check(int *w, int *e) {
 	servicegroup *temp_servicegroup = NULL;
 	servicesmember *temp_servicesmember = NULL;
 	service *temp_service = NULL;
-	service *temp_service2 = NULL;
 	command *temp_command = NULL;
 	timeperiod *temp_timeperiod = NULL;
 	timeperiod *temp_timeperiod2 = NULL;
 	timeperiodexclusion *temp_timeperiodexclusion = NULL;
-	serviceescalation *temp_se = NULL;
-	hostescalation *temp_he = NULL;
-	servicedependency *temp_sd = NULL;
-	hostdependency *temp_hd = NULL;
-	char *buf = NULL;
-	char *temp_command_name = "";
-	int found = FALSE;
 	int total_objects = 0;
 	int warnings = 0;
 	int errors = 0;
@@ -1726,96 +1664,27 @@ int pre_flight_object_check(int *w, int *e) {
 	for(temp_service = service_list; temp_service != NULL; temp_service = temp_service->next) {
 
 		total_objects++;
-		found = FALSE;
-
-		/* check for a valid host */
-		temp_host = find_host(temp_service->host_name);
-
-		/* we couldn't find an associated host! */
-		if(!temp_host) {
-			logit(NSLOG_VERIFICATION_ERROR, TRUE, "Error: Host '%s' specified in service '%s' not defined anywhere!", temp_service->host_name, temp_service->description);
-			errors++;
-			}
-
-		/* save the host pointer for later */
-		temp_service->host_ptr = temp_host;
-
-		/* add a reverse link from the host to the service for faster lookups later */
-		add_service_link_to_host(temp_host, temp_service);
 
 		/* check the event handler command */
 		if(temp_service->event_handler != NULL) {
-
-			/* check the event handler command */
-			buf = (char *)strdup(temp_service->event_handler);
-
-			/* get the command name, leave any arguments behind */
-			temp_command_name = my_strtok(buf, "!");
-
-			temp_command = find_command(temp_command_name);
-			if(temp_command == NULL) {
-				logit(NSLOG_VERIFICATION_ERROR, TRUE, "Error: Event handler command '%s' specified in service '%s' for host '%s' not defined anywhere", temp_command_name, temp_service->description, temp_service->host_name);
+			temp_service->event_handler_ptr = find_bang_command(temp_service->event_handler);
+			if(temp_service->event_handler_ptr == NULL) {
+				logit(NSLOG_VERIFICATION_ERROR, TRUE, "Error: Event handler command '%s' specified in service '%s' for host '%s' not defined anywhere", temp_service->event_handler, temp_service->description, temp_service->host_name);
 				errors++;
 				}
-
-			my_free(buf);
-
-			/* save the pointer to the event handler for later */
-			temp_service->event_handler_ptr = temp_command;
 			}
 
 		/* check the service check_command */
-		buf = (char *)strdup(temp_service->service_check_command);
-
-		/* get the command name, leave any arguments behind */
-		temp_command_name = my_strtok(buf, "!");
-
-		temp_command = find_command(temp_command_name);
-		if(temp_command == NULL) {
-			logit(NSLOG_VERIFICATION_ERROR, TRUE, "Error: Service check command '%s' specified in service '%s' for host '%s' not defined anywhere!", temp_command_name, temp_service->description, temp_service->host_name);
+		temp_service->check_command_ptr = find_bang_command(temp_service->service_check_command);
+		if(temp_service->check_command_ptr == NULL) {
+			logit(NSLOG_VERIFICATION_ERROR, TRUE, "Error: Service check command '%s' specified in service '%s' for host '%s' not defined anywhere!", temp_service->service_check_command, temp_service->description, temp_service->host_name);
 			errors++;
 			}
-
-		my_free(buf);
-
-		/* save the pointer to the check command for later */
-		temp_service->check_command_ptr = temp_command;
 
 		/* check for sane recovery options */
 		if(temp_service->notify_on_recovery == TRUE && temp_service->notify_on_warning == FALSE && temp_service->notify_on_critical == FALSE) {
 			logit(NSLOG_VERIFICATION_WARNING, TRUE, "Warning: Recovery notification option in service '%s' for host '%s' doesn't make any sense - specify warning and/or critical options as well", temp_service->description, temp_service->host_name);
 			warnings++;
-			}
-
-		/* reset the found flag */
-		found = FALSE;
-
-		/* check for valid contacts */
-		for(temp_contactsmember = temp_service->contacts; temp_contactsmember != NULL; temp_contactsmember = temp_contactsmember->next) {
-
-			temp_contact = find_contact(temp_contactsmember->contact_name);
-
-			if(temp_contact == NULL) {
-				logit(NSLOG_VERIFICATION_ERROR, TRUE, "Error: Contact '%s' specified in service '%s' for host '%s' is not defined anywhere!", temp_contactsmember->contact_name, temp_service->description, temp_service->host_name);
-				errors++;
-				}
-
-			/* save the contact pointer for later */
-			temp_contactsmember->contact_ptr = temp_contact;
-			}
-
-		/* check all contact groupss */
-		for(temp_contactgroupsmember = temp_service->contact_groups; temp_contactgroupsmember != NULL; temp_contactgroupsmember = temp_contactgroupsmember->next) {
-
-			temp_contactgroup = find_contactgroup(temp_contactgroupsmember->group_name);
-
-			if(temp_contactgroup == NULL) {
-				logit(NSLOG_VERIFICATION_ERROR, TRUE, "Error: Contact group '%s' specified in service '%s' for host '%s' is not defined anywhere!", temp_contactgroupsmember->group_name, temp_service->description, temp_service->host_name);
-				errors++;
-				}
-
-			/* save the contact group pointer for later */
-			temp_contactgroupsmember->group_ptr = temp_contactgroup;
 			}
 
 		/* check to see if there is at least one contact/group */
@@ -1829,32 +1698,11 @@ int pre_flight_object_check(int *w, int *e) {
 			logit(NSLOG_VERIFICATION_WARNING, TRUE, "Warning: Service '%s' on host '%s' has no check time period defined!", temp_service->description, temp_service->host_name);
 			warnings++;
 			}
-		else {
-			temp_timeperiod = find_timeperiod(temp_service->check_period);
-			if(temp_timeperiod == NULL) {
-				logit(NSLOG_VERIFICATION_ERROR, TRUE, "Error: Check period '%s' specified for service '%s' on host '%s' is not defined anywhere!", temp_service->check_period, temp_service->description, temp_service->host_name);
-				errors++;
-				}
-
-			/* save the pointer to the check timeperiod for later */
-			temp_service->check_period_ptr = temp_timeperiod;
-			}
 
 		/* check service notification timeperiod */
 		if(temp_service->notification_period == NULL) {
 			logit(NSLOG_VERIFICATION_WARNING, TRUE, "Warning: Service '%s' on host '%s' has no notification time period defined!", temp_service->description, temp_service->host_name);
 			warnings++;
-			}
-
-		else {
-			temp_timeperiod = find_timeperiod(temp_service->notification_period);
-			if(temp_timeperiod == NULL) {
-				logit(NSLOG_VERIFICATION_ERROR, TRUE, "Error: Notification period '%s' specified for service '%s' on host '%s' is not defined anywhere!", temp_service->notification_period, temp_service->description, temp_service->host_name);
-				errors++;
-				}
-
-			/* save the pointer to the notification timeperiod for later */
-			temp_service->notification_period_ptr = temp_timeperiod;
 			}
 
 		/* see if the notification interval is less than the check interval */
@@ -1892,68 +1740,29 @@ int pre_flight_object_check(int *w, int *e) {
 	for(temp_host = host_list; temp_host != NULL; temp_host = temp_host->next) {
 
 		total_objects++;
-		found = FALSE;
 
 		/* make sure each host has at least one service associated with it */
-		/* 02/21/08 NOTE: this is extremely inefficient */
-		if(use_precached_objects == FALSE && use_large_installation_tweaks == FALSE) {
-
-			for(temp_service = service_list; temp_service != NULL; temp_service = temp_service->next) {
-				if(!strcmp(temp_service->host_name, temp_host->name)) {
-					found = TRUE;
-					break;
-					}
-				}
-
-			/* we couldn't find a service associated with this host! */
-			if(found == FALSE) {
-				logit(NSLOG_VERIFICATION_WARNING, TRUE, "Warning: Host '%s' has no services associated with it!", temp_host->name);
-				warnings++;
-				}
-
-			found = FALSE;
+		if(temp_host->total_services == 0) {
+			logit(NSLOG_VERIFICATION_WARNING, TRUE, "Warning: Host '%s' has no services associated with it!", temp_host->name);
+			warnings++;
 			}
 
 		/* check the event handler command */
 		if(temp_host->event_handler != NULL) {
-
-			/* check the event handler command */
-			buf = (char *)strdup(temp_host->event_handler);
-
-			/* get the command name, leave any arguments behind */
-			temp_command_name = my_strtok(buf, "!");
-
-			temp_command = find_command(temp_command_name);
-			if(temp_command == NULL) {
-				logit(NSLOG_VERIFICATION_ERROR, TRUE, "Error: Event handler command '%s' specified for host '%s' not defined anywhere", temp_command_name, temp_host->name);
+			temp_host->event_handler_ptr = find_bang_command(temp_host->event_handler);
+			if(temp_host->event_handler_ptr == NULL) {
+				logit(NSLOG_VERIFICATION_ERROR, TRUE, "Error: Event handler command '%s' specified for host '%s' not defined anywhere", temp_host->event_handler, temp_host->name);
 				errors++;
 				}
-
-			my_free(buf);
-
-			/* save the pointer to the event handler command for later */
-			temp_host->event_handler_ptr = temp_command;
 			}
 
 		/* hosts that don't have check commands defined shouldn't ever be checked... */
 		if(temp_host->host_check_command != NULL) {
-
-			/* check the host check_command */
-			buf = (char *)strdup(temp_host->host_check_command);
-
-			/* get the command name, leave any arguments behind */
-			temp_command_name = my_strtok(buf, "!");
-
-			temp_command = find_command(temp_command_name);
-			if(temp_command == NULL) {
-				logit(NSLOG_VERIFICATION_ERROR, TRUE, "Error: Host check command '%s' specified for host '%s' is not defined anywhere!", temp_command_name, temp_host->name);
+			temp_host->check_command_ptr = find_bang_command(temp_host->host_check_command);
+			if(temp_host->check_command_ptr == NULL) {
+				logit(NSLOG_VERIFICATION_ERROR, TRUE, "Error: Host check command '%s' specified for host '%s' is not defined anywhere!", temp_host->host_check_command, temp_host->name);
 				errors++;
 				}
-
-			/* save the pointer to the check command for later */
-			temp_host->check_command_ptr = temp_command;
-
-			my_free(buf);
 			}
 
 		/* check host check timeperiod */
@@ -2141,24 +1950,12 @@ int pre_flight_object_check(int *w, int *e) {
 			errors++;
 			}
 		else for(temp_commandsmember = temp_contact->service_notification_commands; temp_commandsmember != NULL; temp_commandsmember = temp_commandsmember->next) {
-
-				/* check the host notification command */
-				buf = (char *)strdup(temp_commandsmember->command);
-
-				/* get the command name, leave any arguments behind */
-				temp_command_name = my_strtok(buf, "!");
-
-				temp_command = find_command(temp_command_name);
-				if(temp_command == NULL) {
-					logit(NSLOG_VERIFICATION_ERROR, TRUE, "Error: Service notification command '%s' specified for contact '%s' is not defined anywhere!", temp_command_name, temp_contact->name);
-					errors++;
-					}
-
-				/* save pointer to the command for later */
-				temp_commandsmember->command_ptr = temp_command;
-
-				my_free(buf);
+			temp_commandsmember->command_ptr = find_bang_command(temp_commandsmember->command);
+			if(temp_commandsmember->command_ptr == NULL) {
+				logit(NSLOG_VERIFICATION_ERROR, TRUE, "Error: Service notification command '%s' specified for contact '%s' is not defined anywhere!", temp_commandsmember->command, temp_contact->name);
+				errors++;
 				}
+			}
 
 		/* check host notification commands */
 		if(temp_contact->host_notification_commands == NULL) {
@@ -2166,24 +1963,12 @@ int pre_flight_object_check(int *w, int *e) {
 			errors++;
 			}
 		else for(temp_commandsmember = temp_contact->host_notification_commands; temp_commandsmember != NULL; temp_commandsmember = temp_commandsmember->next) {
-
-				/* check the host notification command */
-				buf = (char *)strdup(temp_commandsmember->command);
-
-				/* get the command name, leave any arguments behind */
-				temp_command_name = my_strtok(buf, "!");
-
-				temp_command = find_command(temp_command_name);
-				if(temp_command == NULL) {
-					logit(NSLOG_VERIFICATION_ERROR, TRUE, "Error: Host notification command '%s' specified for contact '%s' is not defined anywhere!", temp_command_name, temp_contact->name);
-					errors++;
-					}
-
-				/* save pointer to the command for later */
-				temp_commandsmember->command_ptr = temp_command;
-
-				my_free(buf);
+			temp_commandsmember->command_ptr = find_bang_command(temp_commandsmember->command);
+			if(temp_commandsmember->command_ptr == NULL) {
+				logit(NSLOG_VERIFICATION_ERROR, TRUE, "Error: Host notification command '%s' specified for contact '%s' is not defined anywhere!", temp_commandsmember->command, temp_contact->name);
+				errors++;
 				}
+			}
 
 		/* check service notification timeperiod */
 		if(temp_contact->service_notification_period == NULL) {
@@ -2252,8 +2037,6 @@ int pre_flight_object_check(int *w, int *e) {
 		printf("Checking contact groups...\n");
 	for(temp_contactgroup = contactgroup_list, total_objects = 0; temp_contactgroup != NULL; temp_contactgroup = temp_contactgroup->next, total_objects++) {
 
-		found = FALSE;
-
 		/* check all the group members */
 		for(temp_contactsmember = temp_contactgroup->members; temp_contactsmember != NULL; temp_contactsmember = temp_contactsmember->next) {
 
@@ -2282,239 +2065,6 @@ int pre_flight_object_check(int *w, int *e) {
 
 	if(verify_config == TRUE)
 		printf("\tChecked %d contact groups.\n", total_objects);
-
-
-
-	/*****************************************/
-	/* check all service escalations...     */
-	/*****************************************/
-	if(verify_config == TRUE)
-		printf("Checking service escalations...\n");
-
-	for(temp_se = serviceescalation_list, total_objects = 0; temp_se != NULL; temp_se = temp_se->next, total_objects++) {
-
-		/* find the service */
-		temp_service = find_service(temp_se->host_name, temp_se->description);
-		if(temp_service == NULL) {
-			logit(NSLOG_VERIFICATION_ERROR, TRUE, "Error: Service '%s' on host '%s' specified in service escalation is not defined anywhere!", temp_se->description, temp_se->host_name);
-			errors++;
-			}
-
-		/* save the service pointer for later */
-		temp_se->service_ptr = temp_service;
-
-		/* find the timeperiod */
-		if(temp_se->escalation_period != NULL) {
-			temp_timeperiod = find_timeperiod(temp_se->escalation_period);
-			if(temp_timeperiod == NULL) {
-				logit(NSLOG_VERIFICATION_ERROR, TRUE, "Error: Escalation period '%s' specified in service escalation for service '%s' on host '%s' is not defined anywhere!", temp_se->escalation_period, temp_se->description, temp_se->host_name);
-				errors++;
-				}
-
-			/* save the timeperiod pointer for later */
-			temp_se->escalation_period_ptr = temp_timeperiod;
-			}
-
-		/* find the contacts */
-		for(temp_contactsmember = temp_se->contacts; temp_contactsmember != NULL; temp_contactsmember = temp_contactsmember->next) {
-
-			/* find the contact */
-			temp_contact = find_contact(temp_contactsmember->contact_name);
-			if(temp_contact == NULL) {
-				logit(NSLOG_VERIFICATION_ERROR, TRUE, "Error: Contact '%s' specified in service escalation for service '%s' on host '%s' is not defined anywhere!", temp_contactsmember->contact_name, temp_se->description, temp_se->host_name);
-				errors++;
-				}
-
-			/* save the contact pointer for later */
-			temp_contactsmember->contact_ptr = temp_contact;
-			}
-
-		/* check all contact groups */
-		for(temp_contactgroupsmember = temp_se->contact_groups; temp_contactgroupsmember != NULL; temp_contactgroupsmember = temp_contactgroupsmember->next) {
-
-			temp_contactgroup = find_contactgroup(temp_contactgroupsmember->group_name);
-
-			if(temp_contactgroup == NULL) {
-				logit(NSLOG_VERIFICATION_ERROR, TRUE, "Error: Contact group '%s' specified in service escalation for service '%s' on host '%s' is not defined anywhere!", temp_contactgroupsmember->group_name, temp_se->description, temp_se->host_name);
-				errors++;
-				}
-
-			/* save the contact group pointer for later */
-			temp_contactgroupsmember->group_ptr = temp_contactgroup;
-			}
-		}
-
-	if(verify_config == TRUE)
-		printf("\tChecked %d service escalations.\n", total_objects);
-
-
-
-	/*****************************************/
-	/* check all service dependencies...     */
-	/*****************************************/
-	if(verify_config == TRUE)
-		printf("Checking service dependencies...\n");
-
-	for(temp_sd = servicedependency_list, total_objects = 0; temp_sd != NULL; temp_sd = temp_sd->next, total_objects++) {
-
-		/* find the dependent service */
-		temp_service = find_service(temp_sd->dependent_host_name, temp_sd->dependent_service_description);
-		if(temp_service == NULL) {
-			logit(NSLOG_VERIFICATION_ERROR, TRUE, "Error: Dependent service '%s' on host '%s' specified in service dependency for service '%s' on host '%s' is not defined anywhere!", temp_sd->dependent_service_description, temp_sd->dependent_host_name, temp_sd->service_description, temp_sd->host_name);
-			errors++;
-			}
-
-		/* save pointer for later */
-		temp_sd->dependent_service_ptr = temp_service;
-
-		/* find the service we're depending on */
-		temp_service2 = find_service(temp_sd->host_name, temp_sd->service_description);
-		if(temp_service2 == NULL) {
-			logit(NSLOG_VERIFICATION_ERROR, TRUE, "Error: Service '%s' on host '%s' specified in service dependency for service '%s' on host '%s' is not defined anywhere!", temp_sd->service_description, temp_sd->host_name, temp_sd->dependent_service_description, temp_sd->dependent_host_name);
-			errors++;
-			}
-
-		/* save pointer for later */
-		temp_sd->master_service_ptr = temp_service2;
-
-		/* make sure they're not the same service */
-		if(temp_service == temp_service2) {
-			logit(NSLOG_VERIFICATION_ERROR, TRUE, "Error: Service dependency definition for service '%s' on host '%s' is circular (it depends on itself)!", temp_sd->dependent_service_description, temp_sd->dependent_host_name);
-			errors++;
-			}
-
-		/* find the timeperiod */
-		if(temp_sd->dependency_period != NULL) {
-			temp_timeperiod = find_timeperiod(temp_sd->dependency_period);
-			if(temp_timeperiod == NULL) {
-				logit(NSLOG_VERIFICATION_ERROR, TRUE, "Error: Dependency period '%s' specified in service dependency for service '%s' on host '%s' is not defined anywhere!", temp_sd->dependency_period, temp_sd->dependent_service_description, temp_sd->dependent_host_name);
-				errors++;
-				}
-
-			/* save the timeperiod pointer for later */
-			temp_sd->dependency_period_ptr = temp_timeperiod;
-			}
-		}
-
-	if(verify_config == TRUE)
-		printf("\tChecked %d service dependencies.\n", total_objects);
-
-
-
-	/*****************************************/
-	/* check all host escalations...     */
-	/*****************************************/
-	if(verify_config == TRUE)
-		printf("Checking host escalations...\n");
-
-	for(temp_he = hostescalation_list, total_objects = 0; temp_he != NULL; temp_he = temp_he->next, total_objects++) {
-
-		/* find the host */
-		temp_host = find_host(temp_he->host_name);
-		if(temp_host == NULL) {
-			logit(NSLOG_VERIFICATION_ERROR, TRUE, "Error: Host '%s' specified in host escalation is not defined anywhere!", temp_he->host_name);
-			errors++;
-			}
-
-		/* save the host pointer for later */
-		temp_he->host_ptr = temp_host;
-
-		/* find the timeperiod */
-		if(temp_he->escalation_period != NULL) {
-			temp_timeperiod = find_timeperiod(temp_he->escalation_period);
-			if(temp_timeperiod == NULL) {
-				logit(NSLOG_VERIFICATION_ERROR, TRUE, "Error: Escalation period '%s' specified in host escalation for host '%s' is not defined anywhere!", temp_he->escalation_period, temp_he->host_name);
-				errors++;
-				}
-
-			/* save the timeperiod pointer for later */
-			temp_he->escalation_period_ptr = temp_timeperiod;
-			}
-
-		/* find the contacts */
-		for(temp_contactsmember = temp_he->contacts; temp_contactsmember != NULL; temp_contactsmember = temp_contactsmember->next) {
-
-			/* find the contact*/
-			temp_contact = find_contact(temp_contactsmember->contact_name);
-			if(temp_contact == NULL) {
-				logit(NSLOG_VERIFICATION_ERROR, TRUE, "Error: Contact '%s' specified in host escalation for host '%s' is not defined anywhere!", temp_contactsmember->contact_name, temp_he->host_name);
-				errors++;
-				}
-
-			/* save the contact pointer for later */
-			temp_contactsmember->contact_ptr = temp_contact;
-			}
-
-		/* check all contact groups */
-		for(temp_contactgroupsmember = temp_he->contact_groups; temp_contactgroupsmember != NULL; temp_contactgroupsmember = temp_contactgroupsmember->next) {
-
-			temp_contactgroup = find_contactgroup(temp_contactgroupsmember->group_name);
-
-			if(temp_contactgroup == NULL) {
-				logit(NSLOG_VERIFICATION_ERROR, TRUE, "Error: Contact group '%s' specified in host escalation for host '%s' is not defined anywhere!", temp_contactgroupsmember->group_name, temp_he->host_name);
-				errors++;
-				}
-
-			/* save the contact group pointer for later */
-			temp_contactgroupsmember->group_ptr = temp_contactgroup;
-			}
-		}
-
-	if(verify_config == TRUE)
-		printf("\tChecked %d host escalations.\n", total_objects);
-
-
-
-	/*****************************************/
-	/* check all host dependencies...     */
-	/*****************************************/
-	if(verify_config == TRUE)
-		printf("Checking host dependencies...\n");
-
-	for(temp_hd = hostdependency_list, total_objects = 0; temp_hd != NULL; temp_hd = temp_hd->next, total_objects++) {
-
-		/* find the dependent host */
-		temp_host = find_host(temp_hd->dependent_host_name);
-		if(temp_host == NULL) {
-			logit(NSLOG_VERIFICATION_ERROR, TRUE, "Error: Dependent host specified in host dependency for host '%s' is not defined anywhere!", temp_hd->dependent_host_name);
-			errors++;
-			}
-
-		/* save pointer for later */
-		temp_hd->dependent_host_ptr = temp_host;
-
-		/* find the host we're depending on */
-		temp_host2 = find_host(temp_hd->host_name);
-		if(temp_host2 == NULL) {
-			logit(NSLOG_VERIFICATION_ERROR, TRUE, "Error: Host specified in host dependency for host '%s' is not defined anywhere!", temp_hd->dependent_host_name);
-			errors++;
-			}
-
-		/* save pointer for later */
-		temp_hd->master_host_ptr = temp_host2;
-
-		/* make sure they're not the same host */
-		if(temp_host == temp_host2) {
-			logit(NSLOG_VERIFICATION_ERROR, TRUE, "Error: Host dependency definition for host '%s' is circular (it depends on itself)!", temp_hd->dependent_host_name);
-			errors++;
-			}
-
-		/* find the timeperiod */
-		if(temp_hd->dependency_period != NULL) {
-			temp_timeperiod = find_timeperiod(temp_hd->dependency_period);
-			if(temp_timeperiod == NULL) {
-				logit(NSLOG_VERIFICATION_ERROR, TRUE, "Error: Dependency period '%s' specified in host dependency for host '%s' is not defined anywhere!", temp_hd->dependency_period, temp_hd->dependent_host_name);
-				errors++;
-				}
-
-			/* save the timeperiod pointer for later */
-			temp_hd->dependency_period_ptr = temp_timeperiod;
-			}
-		}
-
-	if(verify_config == TRUE)
-		printf("\tChecked %d host dependencies.\n", total_objects);
-
 
 
 	/*****************************************/
@@ -2589,20 +2139,143 @@ int pre_flight_object_check(int *w, int *e) {
 #define DFS_NEAR_LOOP                    3  /* has trouble sons */
 #define DFS_LOOPY                        4  /* is a part of a loop */
 
-#define dfs_get_status(h) h->circular_path_checked
-#define dfs_unset_status(h) h->circular_path_checked = 0
-#define dfs_set_status(h, flag) h->circular_path_checked = (flag)
-#define dfs_host_status(h) (h ? dfs_get_status(h) : DFS_OK)
+#define dfs_get_status(obj) (obj ? ary[obj->id] : DFS_OK)
+#define dfs_set_status(obj, value) ary[obj->id] = (value)
+
+extern struct object_count num_objects;
 
 /**
  * Modified version of Depth-first Search
  * http://en.wikipedia.org/wiki/Depth-first_search
+ *
+ * In a dependency tree like this (parent->child, dep->dep or whatever):
+ * A - B   C
+ *      \ /
+ *       D
+ *      / \
+ * E - F - G
+ *   /  \\
+ * H     H
+ *
+ * ... we look at the nodes in the following order:
+ * A B D C G (marking all of them as OK)
+ * E F D G H F (D,G are already OK, E is marked near-loopy F and H are loopy)
+ * H (which is already marked as loopy, so we don't follow it)
+ *
+ * We look at each node at most once per parent, so the algorithm has
+ * O(nx) worst-case complexity,, where x is the average number of
+ * parents.
  */
-static int dfs_host_path(host *root) {
-	hostsmember *child = NULL;
+/*
+ * same as dfs_host_path, but we flip the the tree and traverse it
+ * backwards, since core Nagios doesn't need the child pointer at
+ * later stages.
+ */
+static int dfs_servicedep_path(char *ary, service *root, int dep_type, int *errors)
+{
+	objectlist *olist;
+	int status;
 
-	if(!root)
-		return DFS_NEAR_LOOP;
+	status = dfs_get_status(root);
+	if(status != DFS_UNCHECKED)
+		return status;
+
+	dfs_set_status(root, DFS_TEMP_CHECKED);
+
+	if (dep_type == NOTIFICATION_DEPENDENCY) {
+		olist = root->notify_deps;
+	} else {
+		olist = root->exec_deps;
+	}
+
+	if (!olist) { /* no children, so we can't be loopy */
+		dfs_set_status(root, DFS_OK);
+		return DFS_OK;
+	}
+	for (; olist; olist = olist->next) {
+		int child_status;
+		service *child;
+		servicedependency *child_dep = (servicedependency *)olist->object_ptr;
+
+		/* tree is upside down, so look to master */
+		child = child_dep->master_service_ptr;
+		child_status = dfs_servicedep_path(ary, child, dep_type, errors);
+
+		if (child_status == DFS_OK)
+			continue;
+
+		if(child_status == DFS_TEMP_CHECKED) {
+			logit(NSLOG_VERIFICATION_ERROR, TRUE, "Error: Circular %s dependency detected for services '%s;%s' and '%s;%s'\n",
+				  dep_type == NOTIFICATION_DEPENDENCY ? "notification" : "execution",
+				  root->host_name, root->description,
+				  child->host_name, child->description);
+			(*errors)++;
+			dfs_set_status(child, DFS_LOOPY);
+			dfs_set_status(root, DFS_LOOPY);
+			continue;
+			}
+		}
+
+	/*
+	 * if we've hit ourself, we'll have marked us as loopy
+	 * above, so if we're TEMP_CHECKED still we're ok
+	 */
+	if (dfs_get_status(root) == DFS_TEMP_CHECKED)
+		dfs_set_status(root, DFS_OK);
+	return dfs_get_status(root);
+}
+
+static int dfs_hostdep_path(char *ary, host *root, int dep_type, int *errors)
+{
+	objectlist *olist;
+	int status;
+
+	status = dfs_get_status(root);
+	if(status != DFS_UNCHECKED)
+		return status;
+
+	dfs_set_status(root, DFS_TEMP_CHECKED);
+
+	if (dep_type == NOTIFICATION_DEPENDENCY) {
+		olist = root->notify_deps;
+	} else {
+		olist = root->exec_deps;
+	}
+
+	for (; olist; olist = olist->next) {
+		int child_status;
+		host *child;
+		hostdependency *child_dep = (hostdependency *)olist->object_ptr;
+
+		child = child_dep->master_host_ptr;
+		child_status = dfs_hostdep_path(ary, child, dep_type, errors);
+
+		if (child_status == DFS_OK)
+			continue;
+
+		if(child_status == DFS_TEMP_CHECKED) {
+			logit(NSLOG_VERIFICATION_ERROR, TRUE, "Error: Circular %s dependency detected for hosts '%s' and '%s'\n",
+				  dep_type == NOTIFICATION_DEPENDENCY ? "notification" : "execution",
+				  root->name, child->name);
+			dfs_set_status(child, DFS_LOOPY);
+			dfs_set_status(root, DFS_LOOPY);
+			(*errors)++;
+			continue;
+			}
+		}
+
+	/*
+	 * if we've hit ourself, we'll have marked us as loopy
+	 * above, so if we're still TEMP_CHECKED we're ok
+	 */
+	if (dfs_get_status(root) == DFS_TEMP_CHECKED)
+		dfs_set_status(root, DFS_OK);
+	return dfs_get_status(root);
+}
+
+
+static int dfs_host_path(char *ary, host *root, int *errors) {
+	hostsmember *child = NULL;
 
 	if(dfs_get_status(root) != DFS_UNCHECKED)
 		return dfs_get_status(root);
@@ -2612,27 +2285,20 @@ static int dfs_host_path(host *root) {
 
 	/* We are scanning the children */
 	for(child = root->child_hosts; child != NULL; child = child->next) {
-		int child_status = dfs_get_status(child->host_ptr);
+		int child_status = dfs_host_path(ary, child->host_ptr, errors);
 
-		/* If a child is not checked, check it */
-		if(child_status == DFS_UNCHECKED)
-			child_status = dfs_host_path(child->host_ptr);
+		/* we can move on quickly if child is ok */
+		if(child_status == DFS_OK)
+			continue;
 
 		/* If a child already temporary checked, its a problem,
 		 * loop inside, and its a acked status */
 		if(child_status == DFS_TEMP_CHECKED) {
+			logit(NSLOG_VERIFICATION_ERROR, TRUE, "Error: The hosts '%s' and '%s' form or lead into a circular parent/child chain!", root->name, child->host_ptr->name);
+			(*errors)++;
 			dfs_set_status(child->host_ptr, DFS_LOOPY);
 			dfs_set_status(root, DFS_LOOPY);
-			}
-
-		/* If a child already temporary checked, its a problem, loop inside */
-		if(child_status == DFS_NEAR_LOOP || child_status == DFS_LOOPY) {
-			/* if a node is know to be part of a loop, do not let it be less */
-			if(dfs_get_status(root) != DFS_LOOPY)
-				dfs_set_status(root, DFS_NEAR_LOOP);
-
-			/* we already saw this child, it's a problem */
-			dfs_set_status(child->host_ptr, DFS_LOOPY);
+			continue;
 			}
 		}
 
@@ -2646,22 +2312,35 @@ static int dfs_host_path(host *root) {
 	return dfs_get_status(root);
 	}
 
-
 /* check for circular paths and dependencies */
 int pre_flight_circular_check(int *w, int *e) {
 	host *temp_host = NULL;
 	servicedependency *temp_sd = NULL;
-	servicedependency *temp_sd2 = NULL;
 	hostdependency *temp_hd = NULL;
-	hostdependency *temp_hd2 = NULL;
-	int found = FALSE;
-	int warnings = 0;
-	int errors = 0;
-
+	int i, errors = 0;
+	unsigned int alloc, dep_type;
+	char *ary[2];
 
 	/* bail out if we aren't supposed to verify circular paths */
 	if(verify_circular_paths == FALSE)
 		return OK;
+
+	/* this would be a valid but pathological case */
+	if(num_objects.hosts > num_objects.services)
+		alloc = num_objects.hosts;
+	else
+		alloc = num_objects.services;
+
+	for (i = 0; i < ARRAY_SIZE(ary); i++) {
+		if (!(ary[i] = calloc(1, alloc))) {
+			while (i) {
+				my_free(ary[--i]);
+				}
+			logit(NSLOG_CONFIG_ERROR, TRUE, "Error: Unable to allocate memory for circular path checks.\n");
+			errors++;
+			return ERROR;
+			}
+		}
 
 
 	/********************************************/
@@ -2670,93 +2349,38 @@ int pre_flight_circular_check(int *w, int *e) {
 	if(verify_config == TRUE)
 		printf("Checking for circular paths between hosts...\n");
 
-	/* check routes between all hosts */
-	found = FALSE;
-
-	/* We clean the dsf status from previous check */
 	for(temp_host = host_list; temp_host != NULL; temp_host = temp_host->next) {
-		dfs_set_status(temp_host, DFS_UNCHECKED);
+		dfs_host_path(ary[0], temp_host, &errors);
 		}
-
-	for(temp_host = host_list; temp_host != NULL; temp_host = temp_host->next) {
-		if(dfs_host_path(temp_host) == DFS_LOOPY)
-			errors = 1;
-		}
-
-	for(temp_host = host_list; temp_host != NULL; temp_host = temp_host->next) {
-		if(dfs_get_status(temp_host) == DFS_LOOPY)
-			logit(NSLOG_VERIFICATION_ERROR, TRUE, "Error: The host '%s' is part of a circular parent/child chain!", temp_host->name);
-		/* clean DFS status */
-		dfs_set_status(temp_host, DFS_UNCHECKED);
-		}
-
 
 	/********************************************/
-	/* check for circular dependencies         */
+	/* check for circular dependencies          */
 	/********************************************/
 	if(verify_config == TRUE)
 		printf("Checking for circular host and service dependencies...\n");
 
-	/* check execution dependencies between all services */
+	/* check service dependencies */
+	/* We must clean the dfs status from previous check */
+	for (i = 0; i < ARRAY_SIZE(ary); i++)
+		memset(ary[i], 0, alloc);
 	for(temp_sd = servicedependency_list; temp_sd != NULL; temp_sd = temp_sd->next) {
-
-		/* clear checked flag for all dependencies */
-		for(temp_sd2 = servicedependency_list; temp_sd2 != NULL; temp_sd2 = temp_sd2->next)
-			temp_sd2->circular_path_checked = FALSE;
-
-		found = check_for_circular_servicedependency_path(temp_sd, temp_sd, EXECUTION_DEPENDENCY);
-		if(found == TRUE) {
-			logit(NSLOG_VERIFICATION_ERROR, TRUE, "Error: A circular execution dependency (which could result in a deadlock) exists for service '%s' on host '%s'!", temp_sd->service_description, temp_sd->host_name);
-			errors++;
-			}
+		dep_type = temp_sd->dependency_type;
+		dfs_servicedep_path(ary[dep_type - 1], temp_sd->dependent_service_ptr, dep_type, &errors);
 		}
 
-	/* check notification dependencies between all services */
-	for(temp_sd = servicedependency_list; temp_sd != NULL; temp_sd = temp_sd->next) {
-
-		/* clear checked flag for all dependencies */
-		for(temp_sd2 = servicedependency_list; temp_sd2 != NULL; temp_sd2 = temp_sd2->next)
-			temp_sd2->circular_path_checked = FALSE;
-
-		found = check_for_circular_servicedependency_path(temp_sd, temp_sd, NOTIFICATION_DEPENDENCY);
-		if(found == TRUE) {
-			logit(NSLOG_VERIFICATION_ERROR, TRUE, "Error: A circular notification dependency (which could result in a deadlock) exists for service '%s' on host '%s'!", temp_sd->service_description, temp_sd->host_name);
-			errors++;
-			}
-		}
-
-	/* check execution dependencies between all hosts */
+	/* check host dependencies */
+	for (i = 0; i < ARRAY_SIZE(ary); i++)
+		memset(ary[i], 0, alloc);
 	for(temp_hd = hostdependency_list; temp_hd != NULL; temp_hd = temp_hd->next) {
-
-		/* clear checked flag for all dependencies */
-		for(temp_hd2 = hostdependency_list; temp_hd2 != NULL; temp_hd2 = temp_hd2->next)
-			temp_hd2->circular_path_checked = FALSE;
-
-		found = check_for_circular_hostdependency_path(temp_hd, temp_hd, EXECUTION_DEPENDENCY);
-		if(found == TRUE) {
-			logit(NSLOG_VERIFICATION_ERROR, TRUE, "Error: A circular execution dependency (which could result in a deadlock) exists for host '%s'!", temp_hd->host_name);
-			errors++;
-			}
+		dep_type = temp_hd->dependency_type;
+		dfs_hostdep_path(ary[dep_type - 1], temp_hd->dependent_host_ptr, dep_type, &errors);
 		}
-
-	/* check notification dependencies between all hosts */
-	for(temp_hd = hostdependency_list; temp_hd != NULL; temp_hd = temp_hd->next) {
-
-		/* clear checked flag for all dependencies */
-		for(temp_hd2 = hostdependency_list; temp_hd2 != NULL; temp_hd2 = temp_hd2->next)
-			temp_hd2->circular_path_checked = FALSE;
-
-		found = check_for_circular_hostdependency_path(temp_hd, temp_hd, NOTIFICATION_DEPENDENCY);
-		if(found == TRUE) {
-			logit(NSLOG_VERIFICATION_ERROR, TRUE, "Error: A circular notification dependency (which could result in a deadlock) exists for host '%s'!", temp_hd->host_name);
-			errors++;
-			}
-		}
-
 
 	/* update warning and error count */
-	*w += warnings;
 	*e += errors;
+
+	for (i = 0; i < ARRAY_SIZE(ary); i++)
+		free(ary[i]);
 
 	return (errors > 0) ? ERROR : OK;
 	}

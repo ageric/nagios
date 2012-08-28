@@ -2,8 +2,6 @@
  *
  * NEBMODS.H - Include file for event broker modules
  *
- * Copyright (c) 2002-2005 Ethan Galstad (egalstad@nagios.org)
- * Last Modified:  11-25-2005
  *
  * License:
  *
@@ -25,7 +23,6 @@
 #ifndef _NEBMODS_H
 #define _NEBMODS_H
 
-#include "compat.h"
 #include "nebcallbacks.h"
 #include "nebmodules.h"
 

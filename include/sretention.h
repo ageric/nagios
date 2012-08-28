@@ -2,8 +2,6 @@
  *
  * SRETENTION.H - Header for state retention routines
  *
- * Copyright (c) 1999-2006 Ethan Galstad (egalstad@nagios.org)
- * Last Modified:   02-28-2006
  *
  * License:
  *
@@ -22,7 +20,7 @@
  *
  *****************************************************************************/
 
-#include "compat.h"
+#include "common.h"
 NAGIOS_BEGIN_DECL
 
 int initialize_retention_data(char *);

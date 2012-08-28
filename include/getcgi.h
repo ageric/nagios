@@ -2,11 +2,10 @@
  *
  * GETCGI.H -  Nagios CGI Input Routine Include File
  *
- * Last Modified: 11-25-2005
  *
  *****************************************************/
 
-#include "compat.h"
+#include "lib/lnag-utils.h"
 NAGIOS_BEGIN_DECL
 
 char **getcgivars(void);

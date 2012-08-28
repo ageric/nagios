@@ -2,10 +2,6 @@
  *
  * EXTINFO.C -  Nagios Extended Information CGI
  *
- * Copyright (c) 2011-2012 Nagios Core Development Team
- * Copyright (c) 1999-2010 Ethan Galstad (egalstad@nagios.org)
- * Last Modified: 08-15-2012 [WL]
- *
  * License:
  *
  * This program is free software; you can redistribute it and/or modify

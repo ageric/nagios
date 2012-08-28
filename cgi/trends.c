@@ -2,8 +2,6 @@
  *
  * TRENDS.C -  Nagios State Trends CGI
  *
- * Copyright (c) 1999-2008 Ethan Galstad (egalstad@nagios.org)
- * Last Modified: 10-15-2008
  *
  * License:
  *
@@ -45,12 +43,6 @@ extern char url_stylesheets_path[MAX_FILENAME_LENGTH];
 extern char physical_images_path[MAX_FILENAME_LENGTH];
 
 extern int     log_rotation_method;
-
-extern host *host_list;
-extern service *service_list;
-
-#include "../include/skiplist.h"
-extern skiplist *object_skiplists[NUM_OBJECT_SKIPLISTS];
 
 /* archived state types */
 #define AS_CURRENT_STATE        -1   /* special case for initial assumed state */

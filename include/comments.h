@@ -2,8 +2,6 @@
  *
  * COMMENTS.H - Header file for comment functions
  *
- * Copyright (c) 1999-2006 Ethan Galstad (egalstad@nagios.org)
- * Last Modified:   12-26-2006
  *
  * License:
  *
@@ -25,7 +23,6 @@
 
 #ifndef _COMMENTS_H
 #define _COMMENTS_H
-#include "compat.h"
 #include "common.h"
 #include "objects.h"
 

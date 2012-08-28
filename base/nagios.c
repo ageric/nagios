@@ -3,13 +3,9 @@
  * NAGIOS.C - Core Program Code For Nagios
  *
  * Program: Nagios Core
- * Version: 3.4.1
  * License: GPL
- * Copyright (c) 2009-2010 Nagios Core Development Team and Community Contributors
- * Copyright (c) 1999-2009 Ethan Galstad
  *
  * First Written:   01-28-1999 (start of development)
- * Last Modified:   05-11-2012
  *
  * Description:
  *
@@ -234,13 +230,6 @@ int             command_file_fd;
 FILE            *command_file_fp;
 int             command_file_created = FALSE;
 
-
-extern contact	       *contact_list;
-extern contactgroup    *contactgroup_list;
-extern hostgroup       *hostgroup_list;
-extern command         *command_list;
-extern timeperiod      *timeperiod_list;
-extern serviceescalation *serviceescalation_list;
 
 notification    *notification_list;
 

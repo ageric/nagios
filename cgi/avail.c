@@ -2,8 +2,6 @@
  *
  * AVAIL.C -  Nagios Availability CGI
  *
- * Copyright (c) 2000-2010 Ethan Galstad (egalstad@nagios.org)
- * Last Modified: 08-05-2010
  *
  * License:
  *
@@ -36,12 +34,6 @@ extern char main_config_file[MAX_FILENAME_LENGTH];
 extern char url_html_path[MAX_FILENAME_LENGTH];
 extern char url_images_path[MAX_FILENAME_LENGTH];
 extern char url_stylesheets_path[MAX_FILENAME_LENGTH];
-
-extern host      *host_list;
-extern hostgroup *hostgroup_list;
-extern servicegroup *servicegroup_list;
-extern service   *service_list;
-extern timeperiod *timeperiod_list;
 
 extern int       log_rotation_method;
 

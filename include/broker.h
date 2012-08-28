@@ -2,8 +2,6 @@
  *
  * BROKER.H - Event broker includes for Nagios
  *
- * Copyright (c) 2002-2006 Ethan Galstad (egalstad@nagios.org)
- * Last Modified:   12-12-2006
  *
  * License:
  *
@@ -179,7 +177,6 @@
 /****** EVENT BROKER FUNCTIONS *************/
 
 #ifdef USE_EVENT_BROKER
-#include "compat.h"
 NAGIOS_BEGIN_DECL
 
 struct timeval get_broker_timestamp(struct timeval *);

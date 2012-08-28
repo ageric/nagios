@@ -2,8 +2,6 @@
  *
  * SUMMARY.C -  Nagios Alert Summary CGI
  *
- * Copyright (c) 2002-2008 Ethan Galstad (egalstad@nagios.org)
- * Last Modified: 01-23-2008
  *
  * License:
  *
@@ -36,12 +34,6 @@ extern char main_config_file[MAX_FILENAME_LENGTH];
 extern char url_html_path[MAX_FILENAME_LENGTH];
 extern char url_images_path[MAX_FILENAME_LENGTH];
 extern char url_stylesheets_path[MAX_FILENAME_LENGTH];
-
-extern host *host_list;
-extern hostgroup *hostgroup_list;
-extern service *service_list;
-extern servicegroup *servicegroup_list;
-
 
 /* output types */
 #define HTML_OUTPUT             0

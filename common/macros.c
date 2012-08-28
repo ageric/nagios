@@ -2,10 +2,6 @@
  *
  * MACROS.C - Common macro functions for Nagios
  *
- * Copyright (c) 2011-2012 Nagios Core Development Team
- * Copyright (c) 1999-2010 Ethan Galstad (egalstad@nagios.org)
- * Last Modified: 08-15-2012 [WL]
- *
  * License:
  *
  * This program is free software; you can redistribute it and/or modify
@@ -41,10 +37,6 @@ extern int      enable_environment_macros;
 #endif
 
 extern char     *illegal_output_chars;
-
-extern host             *host_list;
-extern service          *service_list;
-extern servicegroup     *servicegroup_list;
 
 char *macro_x_names[MACRO_X_COUNT]; /* the macro names */
 char *macro_user[MAX_USER_MACROS]; /* $USERx$ macros */

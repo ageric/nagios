@@ -2,7 +2,6 @@
  *
  * Nagios Common Header File
  * Written By: Ethan Galstad (egalstad@nagios.org)
- * Last Modified: 10-22-2007
  *
  * License:
  *
@@ -27,9 +26,6 @@
 
 /* Experimental performance tweaks - use with caution */
 #undef USE_MEMORY_PERFORMANCE_TWEAKS
-
-/* my_free has been freed from bondage as a function */
-#define my_free(ptr) do { if(ptr) { free(ptr); ptr = NULL; } } while(0)
 
 
 /****************** SERVICE STATES ********************/
@@ -394,24 +390,6 @@
 #define PARALLEL_HOST_CHECK_STATS            9
 #define SERIAL_HOST_CHECK_STATS              10
 #define MAX_CHECK_STATS_TYPES                11
-
-
-/************************* GENERAL DEFINITIONS  **************************/
-
-#define	OK				0
-#define ERROR				-2	/* value was changed from -1 so as to not interfere with STATUS_UNKNOWN plugin result */
-
-
-#ifndef TRUE
-#define TRUE				1
-#elif (TRUE!=1)
-#define TRUE				1
-#endif
-#ifndef FALSE
-#define FALSE				0
-#elif (FALSE!=0)
-#define FALSE				0
-#endif
 
 
 /****************** HOST CONFIG FILE READING OPTIONS ********************/

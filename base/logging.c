@@ -2,8 +2,6 @@
  *
  * LOGGING.C - Log file functions for use with Nagios
  *
- * Copyright (c) 1999-2007 Ethan Galstad (egalstad@nagios.org)
- * Last Modified: 10-28-2007
  *
  * License:
  *
@@ -32,9 +30,6 @@
 
 extern char	*log_file;
 extern char	*log_archive_path;
-
-extern host     *host_list;
-extern service  *service_list;
 
 extern int	use_syslog;
 extern int      log_service_retries;

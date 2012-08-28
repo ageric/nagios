@@ -1,7 +1,6 @@
 ###############################
 # Makefile for Nagios
 #
-# Last Modified: 04-13-2008
 ###############################
 
 
@@ -29,6 +28,8 @@ CFGDIR=@sysconfdir@
 BINDIR=@bindir@
 CGIDIR=@sbindir@
 LIBEXECDIR=@libexecdir@
+LIBDIR=@libdir@
+INCLUDEDIR=@includedir@
 HTMLDIR=@datadir@
 datarootdir=@datarootdir@
 INSTALL=@INSTALL@
@@ -329,7 +330,23 @@ install-commandmode:
 	@echo ""
 
 
-fullinstall: install install-init install-commandmode install-webconf
+install-devel: lib/libnagios.a
+	$(INSTALL) -d -m 755 $(DESTDIR)$(INCLUDEDIR)
+	$(INSTALL) -d -m 755 $(DESTDIR)$(INCLUDEDIR)/lib
+	$(INSTALL) -d -m 755 $(DESTDIR)$(LIBDIR)
+	$(INSTALL) -m 644 lib/libnagios.a $(DESTDIR)$(LIBDIR)
+	$(INSTALL) -m 644 include/*.h $(DESTDIR)$(INCLUDEDIR)
+	$(INSTALL) -m 644 lib/*.h $(DESTDIR)$(INCLUDEDIR)/lib
+	# this file isn't needed and will most likely conflict with
+	# other packages.
+	rm -f $(DESTDIR)$(INCLUDEDIR)/nagios/config.h
+
+dox:
+	@rm -rf Documentation
+	doxygen doxy.conf
+
+
+fullinstall: install install-init install-commandmode install-webconf install-devel
 
 # Uninstall is too destructive if base install directory is /usr, etc.
 #uninstall:
@@ -377,4 +394,4 @@ pkgclean:
 	rm -rf pkg Prototype nagios.SPARC.pkg.tar.gz
 
 # Targets that always get built
-.PHONY:	indent clean clean distclean
+.PHONY:	indent clean clean distclean dox

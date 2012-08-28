@@ -104,7 +104,7 @@ static void job_error(child_process *cp, struct kvvec *kvv, const char *fmt, ...
 	if (cp) {
 		kvvec_addkv(kvv, "job_id", (char *)mkstr("%d", cp->id));
 	}
-	kvvec_addkv_wlen(kvv, "error_msg", 5, msg, len);
+	kvvec_addkv_wlen(kvv, "error_msg", 9, msg, len);
 	ret = send_kvvec(master_sd, kvv);
 	if (ret < 0 && errno == EPIPE)
 		exit_worker();
@@ -127,7 +127,7 @@ int tv_delta_msec(const struct timeval *start, const struct timeval *stop)
 	return msecs;
 }
 
-static float tv_delta_f(const struct timeval *start, const struct timeval *stop)
+float tv_delta_f(const struct timeval *start, const struct timeval *stop)
 {
 #define DIVIDER 1000000
 	float ret;

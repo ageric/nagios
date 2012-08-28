@@ -18,4 +18,8 @@ Makefile
 *.gcno
 *.gcov
 *.a
-/gmon.out
+*.so
+gmon.out
+core.[1-9]*
+/Documentation
+*.pre-indent
