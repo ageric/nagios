@@ -260,7 +260,7 @@ int main(int argc, char **argv, char **env) {
 
 	mac = get_global_macros();
 
-
+	memset(&num_objects, 0, sizeof(num_objects));
 
 #ifdef HAVE_GETOPT_H
 	int option_index = 0;

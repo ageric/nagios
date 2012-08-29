@@ -541,6 +541,8 @@ static int receive_command(int sd, int events, void *discard)
 		exit_worker();
 	}
 	if (ioc_ret < 0) {
+		wlog("iocache_read() returned %d in received_command", ioc_ret);
+		return -1;
 		/* XXX: handle this somehow */
 	}
 
