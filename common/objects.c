@@ -2702,8 +2702,8 @@ int free_object_data(void) {
 		my_free(this_contact->alias);
 		my_free(this_contact->email);
 		my_free(this_contact->pager);
-		for(x = 0; x < MAX_CONTACT_ADDRESSES; i++)
-			my_free(this_contact->address[i]);
+		for(x = 0; x < MAX_CONTACT_ADDRESSES; x++)
+			my_free(this_contact->address[x]);
 
 #ifdef NSCORE
 		free_objectlist(&this_contact->contactgroups_ptr);
