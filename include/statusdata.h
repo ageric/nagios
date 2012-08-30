@@ -2,7 +2,6 @@
  *
  * STATUSDATA.H - Header for external status data routines
  *
- *
  * License:
  *
  * This program is free software; you can redistribute it and/or modify
@@ -56,6 +55,7 @@ typedef struct hoststatus_struct {
 	char    *plugin_output;
 	char    *long_plugin_output;
 	char    *perf_data;
+	char	*saved_data;
 	int     status;
 	time_t  last_update;
 	int     has_been_checked;
@@ -104,6 +104,7 @@ typedef struct servicestatus_struct {
 	char    *plugin_output;
 	char    *long_plugin_output;
 	char    *perf_data;
+	char	*saved_data;
 	int     max_attempts;
 	int     current_attempt;
 	int     status;

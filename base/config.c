@@ -1107,7 +1107,7 @@ int read_main_config_file(char *main_config_file) {
 
 		else if(!strcmp(variable, "aggregate_status_updates")) {
 
-			/* DEPRECATED - ALL UPDATED ARE AGGREGATED AS OF NAGIOS 3.X */
+			/* DEPRECATED - ALL UPDATES ARE AGGREGATED AS OF NAGIOS 3.X */
 			/*aggregate_status_updates=(atoi(value)>0)?TRUE:FALSE;*/
 
 			logit(NSLOG_CONFIG_WARNING, TRUE, "Warning: aggregate_status_updates directive ignored.  All status file updates are now aggregated.");
@@ -1300,6 +1300,10 @@ int read_main_config_file(char *main_config_file) {
 		else if(strstr(variable, "host_perfdata") == variable)
 			continue;
 		else if(strstr(variable, "service_perfdata") == variable)
+			continue;
+		else if(strstr(variable, "host_saveddata") == variable)
+			continue;
+		else if(strstr(variable, "service_saveddata") == variable)
 			continue;
 		else if(strstr(input, "cfg_file=") == input || strstr(input, "cfg_dir=") == input)
 			continue;
@@ -1537,8 +1541,8 @@ int pre_flight_check(void) {
 		printf("Checking misc settings...\n");
 
 	/* check if we can write to temp_path */
-	asprintf(&buf, "%s/nagiosXXXXXX", temp_path);
-	if((temp_path_fd = mkstemp(buf)) == -1) {
+	if (asprintf(&buf, "%s/nagiosXXXXXX", temp_path) == -1 ||
+	    (temp_path_fd = mkstemp(buf)) == -1) {
 		logit(NSLOG_VERIFICATION_ERROR, TRUE, "\tError: Unable to write to temp_path ('%s') - %s\n", temp_path, strerror(errno));
 		errors++;
 		}
@@ -1549,8 +1553,8 @@ int pre_flight_check(void) {
 	my_free(buf);
 
 	/* check if we can write to check_result_path */
-	asprintf(&buf, "%s/nagiosXXXXXX", check_result_path);
-	if((temp_path_fd = mkstemp(buf)) == -1) {
+	if (asprintf(&buf, "%s/nagiosXXXXXX", check_result_path) == -1 ||
+	    (temp_path_fd = mkstemp(buf)) == -1) {
 		logit(NSLOG_VERIFICATION_WARNING, TRUE, "\tError: Unable to write to check_result_path ('%s') - %s\n", check_result_path, strerror(errno));
 		errors++;
 		}

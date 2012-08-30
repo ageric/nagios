@@ -2,7 +2,6 @@
  *
  * OBJECTS.H - Header file for object addition/search functions
  *
- *
  * License:
  *
  * This program is free software; you can redistribute it and/or modify
@@ -331,6 +330,7 @@ struct host_struct {
 	char	*plugin_output;
 	char    *long_plugin_output;
 	char    *perf_data;
+	char	*saved_data;
 	int     state_type;
 	int     current_attempt;
 	unsigned long current_event_id;
@@ -465,6 +465,7 @@ struct service_struct {
 	char	*plugin_output;
 	char    *long_plugin_output;
 	char    *perf_data;
+	char	*saved_data;
 	int     state_type;
 	time_t	next_check;
 	int     should_be_scheduled;

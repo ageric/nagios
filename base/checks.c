@@ -2,7 +2,6 @@
  *
  * CHECKS.C - Service and host check functions for Nagios
  *
- *
  * License:
  *
  * This program is free software; you can redistribute it and/or modify
@@ -463,6 +462,7 @@ int handle_async_service_check_result(service *temp_service, check_result *queue
 	my_free(temp_service->plugin_output);
 	my_free(temp_service->long_plugin_output);
 	my_free(temp_service->perf_data);
+	my_free(temp_service->saved_data);
 
 	/* if there was some error running the command, just skip it (this shouldn't be happening) */
 	if(queued_check_result->exited_ok == FALSE) {
@@ -490,7 +490,7 @@ int handle_async_service_check_result(service *temp_service, check_result *queue
 	else {
 
 		/* parse check output to get: (1) short output, (2) long output, (3) perf data */
-		parse_check_output(queued_check_result->output, &temp_service->plugin_output, &temp_service->long_plugin_output, &temp_service->perf_data, TRUE, TRUE);
+		parse_check_output(queued_check_result->output, &temp_service->plugin_output, &temp_service->long_plugin_output, &temp_service->perf_data, &temp_service->saved_data, TRUE, TRUE);
 
 		/* make sure the plugin output isn't null */
 		if(temp_service->plugin_output == NULL)
@@ -506,6 +506,7 @@ int handle_async_service_check_result(service *temp_service, check_result *queue
 		log_debug_info(DEBUGL_CHECKS, 2, "Short Output: %s\n", (temp_service->plugin_output == NULL) ? "NULL" : temp_service->plugin_output);
 		log_debug_info(DEBUGL_CHECKS, 2, "Long Output:  %s\n", (temp_service->long_plugin_output == NULL) ? "NULL" : temp_service->long_plugin_output);
 		log_debug_info(DEBUGL_CHECKS, 2, "Perf Data:    %s\n", (temp_service->perf_data == NULL) ? "NULL" : temp_service->perf_data);
+		log_debug_info(DEBUGL_CHECKS, 2, "Saved Data:	%s\n", (temp_service->saved_data == NULL) ? "NULL" : temp_service->saved_data);
 
 		/* grab the return code */
 		temp_service->current_state = queued_check_result->return_code;
@@ -2134,7 +2135,7 @@ int run_sync_host_check_3x(host *hst, int *check_result_code, int check_options,
 	/* send data to event broker */
 	end_time.tv_sec = 0L;
 	end_time.tv_usec = 0L;
-	broker_host_check(NEBTYPE_HOSTCHECK_INITIATE, NEBFLAG_NONE, NEBATTR_NONE, hst, HOST_CHECK_ACTIVE, hst->current_state, hst->state_type, start_time, end_time, hst->host_check_command, hst->latency, 0.0, host_check_timeout, FALSE, 0, NULL, NULL, NULL, NULL, NULL);
+	broker_host_check(NEBTYPE_HOSTCHECK_INITIATE, NEBFLAG_NONE, NEBATTR_NONE, hst, HOST_CHECK_ACTIVE, hst->current_state, hst->state_type, start_time, end_time, hst->host_check_command, hst->latency, 0.0, host_check_timeout, FALSE, 0, NULL, NULL, NULL, NULL, NULL, NULL);
 #endif
 
 	/* execute the host check */
@@ -2153,7 +2154,7 @@ int run_sync_host_check_3x(host *hst, int *check_result_code, int check_options,
 
 #ifdef USE_EVENT_BROKER
 	/* send data to event broker */
-	broker_host_check(NEBTYPE_HOSTCHECK_PROCESSED, NEBFLAG_NONE, NEBATTR_NONE, hst, HOST_CHECK_ACTIVE, hst->current_state, hst->state_type, start_time, end_time, hst->host_check_command, hst->latency, hst->execution_time, host_check_timeout, FALSE, hst->current_state, NULL, hst->plugin_output, hst->long_plugin_output, hst->perf_data, NULL);
+	broker_host_check(NEBTYPE_HOSTCHECK_PROCESSED, NEBFLAG_NONE, NEBATTR_NONE, hst, HOST_CHECK_ACTIVE, hst->current_state, hst->state_type, start_time, end_time, hst->host_check_command, hst->latency, hst->execution_time, host_check_timeout, FALSE, hst->current_state, NULL, hst->plugin_output, hst->long_plugin_output, hst->perf_data, hst->saved_data, NULL);
 #endif
 
 	return result;
@@ -2195,7 +2196,7 @@ int execute_sync_host_check_3x(host *hst) {
 	end_time.tv_usec = 0L;
 
 	/* send data to event broker */
-	neb_result = broker_host_check(NEBTYPE_HOSTCHECK_SYNC_PRECHECK, NEBFLAG_NONE, NEBATTR_NONE, hst, HOST_CHECK_ACTIVE, hst->current_state, hst->state_type, start_time, end_time, hst->host_check_command, hst->latency, 0.0, host_check_timeout, FALSE, 0, NULL, NULL, NULL, NULL, NULL);
+	neb_result = broker_host_check(NEBTYPE_HOSTCHECK_SYNC_PRECHECK, NEBFLAG_NONE, NEBATTR_NONE, hst, HOST_CHECK_ACTIVE, hst->current_state, hst->state_type, start_time, end_time, hst->host_check_command, hst->latency, 0.0, host_check_timeout, FALSE, 0, NULL, NULL, NULL, NULL, NULL, NULL);
 
 	/* neb module wants to cancel the host check - return the current state of the host */
 	if(neb_result == NEBERROR_CALLBACKCANCEL)
@@ -2236,7 +2237,7 @@ int execute_sync_host_check_3x(host *hst) {
 	/* send data to event broker */
 	end_time.tv_sec = 0L;
 	end_time.tv_usec = 0L;
-	broker_host_check(NEBTYPE_HOSTCHECK_RAW_START, NEBFLAG_NONE, NEBATTR_NONE, hst, HOST_CHECK_ACTIVE, return_result, hst->state_type, start_time, end_time, hst->host_check_command, 0.0, 0.0, host_check_timeout, early_timeout, result, processed_command, hst->plugin_output, hst->long_plugin_output, hst->perf_data, NULL);
+	broker_host_check(NEBTYPE_HOSTCHECK_RAW_START, NEBFLAG_NONE, NEBATTR_NONE, hst, HOST_CHECK_ACTIVE, return_result, hst->state_type, start_time, end_time, hst->host_check_command, 0.0, 0.0, host_check_timeout, early_timeout, result, processed_command, hst->plugin_output, hst->long_plugin_output, hst->perf_data, hst->saved_data, NULL);
 #endif
 
 	log_debug_info(DEBUGL_COMMANDS, 1, "Raw host check command: %s\n", raw_command);
@@ -2247,6 +2248,7 @@ int execute_sync_host_check_3x(host *hst) {
 	my_free(hst->plugin_output);
 	my_free(hst->long_plugin_output);
 	my_free(hst->perf_data);
+	my_free(hst->saved_data);
 
 	/* run the host check command */
 	result = my_system_r(&mac, processed_command, host_check_timeout, &early_timeout, &exectime, &temp_plugin_output, MAX_PLUGIN_OUTPUT_LENGTH);
@@ -2269,7 +2271,7 @@ int execute_sync_host_check_3x(host *hst) {
 	hst->check_type = HOST_CHECK_ACTIVE;
 
 	/* parse the output: short and long output, and perf data */
-	parse_check_output(temp_plugin_output, &hst->plugin_output, &hst->long_plugin_output, &hst->perf_data, TRUE, TRUE);
+	parse_check_output(temp_plugin_output, &hst->plugin_output, &hst->long_plugin_output, &hst->perf_data, &hst->saved_data, TRUE, TRUE);
 
 	/* free memory */
 	my_free(temp_plugin_output);
@@ -2309,7 +2311,7 @@ int execute_sync_host_check_3x(host *hst) {
 
 #ifdef USE_EVENT_BROKER
 	/* send data to event broker */
-	broker_host_check(NEBTYPE_HOSTCHECK_RAW_END, NEBFLAG_NONE, NEBATTR_NONE, hst, HOST_CHECK_ACTIVE, return_result, hst->state_type, start_time, end_time, hst->host_check_command, 0.0, exectime, host_check_timeout, early_timeout, result, processed_command, hst->plugin_output, hst->long_plugin_output, hst->perf_data, NULL);
+	broker_host_check(NEBTYPE_HOSTCHECK_RAW_END, NEBFLAG_NONE, NEBATTR_NONE, hst, HOST_CHECK_ACTIVE, return_result, hst->state_type, start_time, end_time, hst->host_check_command, 0.0, exectime, host_check_timeout, early_timeout, result, processed_command, hst->plugin_output, hst->long_plugin_output, hst->perf_data, hst->saved_data, NULL);
 #endif
 
 	log_debug_info(DEBUGL_CHECKS, 0, "** Sync host check done: state=%d\n", return_result);
@@ -2444,7 +2446,7 @@ int run_async_host_check_3x(host *hst, int check_options, double latency, int sc
 	end_time.tv_usec = 0L;
 
 	/* send data to event broker */
-	neb_result = broker_host_check(NEBTYPE_HOSTCHECK_ASYNC_PRECHECK, NEBFLAG_NONE, NEBATTR_NONE, hst, HOST_CHECK_ACTIVE, hst->current_state, hst->state_type, start_time, end_time, hst->host_check_command, hst->latency, 0.0, host_check_timeout, FALSE, 0, NULL, NULL, NULL, NULL, NULL);
+	neb_result = broker_host_check(NEBTYPE_HOSTCHECK_ASYNC_PRECHECK, NEBFLAG_NONE, NEBATTR_NONE, hst, HOST_CHECK_ACTIVE, hst->current_state, hst->state_type, start_time, end_time, hst->host_check_command, hst->latency, 0.0, host_check_timeout, FALSE, 0, NULL, NULL, NULL, NULL, NULL, NULL);
 
 	/* neb module wants to cancel the host check - the check will be rescheduled for a later time by the scheduling logic */
 	if(neb_result == NEBERROR_CALLBACKCANCEL)
@@ -2531,7 +2533,7 @@ int run_async_host_check_3x(host *hst, int check_options, double latency, int sc
 
 #ifdef USE_EVENT_BROKER
 	/* send data to event broker */
-	broker_host_check(NEBTYPE_HOSTCHECK_INITIATE, NEBFLAG_NONE, NEBATTR_NONE, hst, HOST_CHECK_ACTIVE, hst->current_state, hst->state_type, start_time, end_time, hst->host_check_command, hst->latency, 0.0, host_check_timeout, FALSE, 0, processed_command, NULL, NULL, NULL, NULL);
+	broker_host_check(NEBTYPE_HOSTCHECK_INITIATE, NEBFLAG_NONE, NEBATTR_NONE, hst, HOST_CHECK_ACTIVE, hst->current_state, hst->state_type, start_time, end_time, hst->host_check_command, hst->latency, 0.0, host_check_timeout, FALSE, 0, processed_command, NULL, NULL, NULL, NULL, NULL);
 #endif
 
 	/* reset latency (permanent value for this check will get set later) */
@@ -2655,9 +2657,10 @@ int handle_async_host_check_result_3x(host *temp_host, check_result *queued_chec
 	my_free(temp_host->plugin_output);
 	my_free(temp_host->long_plugin_output);
 	my_free(temp_host->perf_data);
+	my_free(temp_host->saved_data);
 
 	/* parse check output to get: (1) short output, (2) long output, (3) perf data */
-	parse_check_output(queued_check_result->output, &temp_host->plugin_output, &temp_host->long_plugin_output, &temp_host->perf_data, TRUE, TRUE);
+	parse_check_output(queued_check_result->output, &temp_host->plugin_output, &temp_host->long_plugin_output, &temp_host->perf_data, &temp_host->saved_data, TRUE, TRUE);
 
 	/* make sure we have some data */
 	if(temp_host->plugin_output == NULL || !strcmp(temp_host->plugin_output, "")) {
@@ -2675,6 +2678,7 @@ int handle_async_host_check_result_3x(host *temp_host, check_result *queued_chec
 	log_debug_info(DEBUGL_CHECKS, 2, "Short Output: %s\n", (temp_host->plugin_output == NULL) ? "NULL" : temp_host->plugin_output);
 	log_debug_info(DEBUGL_CHECKS, 2, "Long Output:  %s\n", (temp_host->long_plugin_output == NULL) ? "NULL" : temp_host->long_plugin_output);
 	log_debug_info(DEBUGL_CHECKS, 2, "Perf Data:    %s\n", (temp_host->perf_data == NULL) ? "NULL" : temp_host->perf_data);
+	log_debug_info(DEBUGL_CHECKS, 2, "Saved Data:	%s\n", (temp_host->saved_data == NULL) ? "NULL" : temp_host->saved_data);
 
 	/* get the unprocessed return code */
 	/* NOTE: for passive checks, this is the final/processed state */
@@ -2691,6 +2695,7 @@ int handle_async_host_check_result_3x(host *temp_host, check_result *queued_chec
 			my_free(temp_host->plugin_output);
 			my_free(temp_host->long_plugin_output);
 			my_free(temp_host->perf_data);
+			my_free(temp_host->saved_data);
 
 			temp_host->plugin_output = (char *)strdup("(Host check did not exit properly)");
 
@@ -2705,6 +2710,7 @@ int handle_async_host_check_result_3x(host *temp_host, check_result *queued_chec
 			my_free(temp_host->plugin_output);
 			my_free(temp_host->long_plugin_output);
 			my_free(temp_host->perf_data);
+			my_free(temp_host->saved_data);
 
 			asprintf(&temp_host->plugin_output, "(Return code of %d is out of bounds%s)", queued_check_result->return_code, (queued_check_result->return_code == 126 || queued_check_result->return_code == 127) ? " - plugin may be missing" : "");
 
@@ -2755,7 +2761,7 @@ int handle_async_host_check_result_3x(host *temp_host, check_result *queued_chec
 
 #ifdef USE_EVENT_BROKER
 	/* send data to event broker */
-	broker_host_check(NEBTYPE_HOSTCHECK_PROCESSED, NEBFLAG_NONE, NEBATTR_NONE, temp_host, temp_host->check_type, temp_host->current_state, temp_host->state_type, start_time_hires, end_time_hires, temp_host->host_check_command, temp_host->latency, temp_host->execution_time, host_check_timeout, queued_check_result->early_timeout, queued_check_result->return_code, NULL, temp_host->plugin_output, temp_host->long_plugin_output, temp_host->perf_data, NULL);
+	broker_host_check(NEBTYPE_HOSTCHECK_PROCESSED, NEBFLAG_NONE, NEBATTR_NONE, temp_host, temp_host->check_type, temp_host->current_state, temp_host->state_type, start_time_hires, end_time_hires, temp_host->host_check_command, temp_host->latency, temp_host->execution_time, host_check_timeout, queued_check_result->early_timeout, queued_check_result->return_code, NULL, temp_host->plugin_output, temp_host->long_plugin_output, temp_host->perf_data, temp_host->saved_data, NULL);
 #endif
 
 	return OK;
@@ -3464,12 +3470,10 @@ int handle_host_state(host *hst) {
 		/* handle the host state change */
 		handle_host_event(hst);
 
-		/* the host just recovered, so reset the current host attempt */
-		if(hst->current_state == HOST_UP)
-			hst->current_attempt = 1;
-
-		/* the host recovered, so reset the current notification number and state flags (after the recovery notification has gone out) */
+		/* the host recovered, so reset the current notification number, host attempt,
+		 * and state flags (after the recovery notification has gone out) */
 		if(hst->current_state == HOST_UP) {
+			hst->current_attempt = 1;
 			hst->current_notification_number = 0;
 			hst->notified_on_down = FALSE;
 			hst->notified_on_unreachable = FALSE;
@@ -3493,7 +3497,7 @@ int handle_host_state(host *hst) {
 
 
 /* parse raw plugin output and return: short and long output, perf data */
-int parse_check_output(char *buf, char **short_output, char **long_output, char **perf_data, int escape_newlines_please, int newlines_are_escaped) {
+int parse_check_output(char *buf, char **short_output, char **long_output, char **perf_data, char **saved_data, int escape_newlines_please, int newlines_are_escaped) {
 	int current_line = 0;
 	int found_newline = FALSE;
 	int eof = FALSE;
@@ -3501,8 +3505,11 @@ int parse_check_output(char *buf, char **short_output, char **long_output, char 
 	int dbuf_chunk = 1024;
 	dbuf db1;
 	dbuf db2;
+	dbuf db3;
 	char *ptr = NULL;
+	char *ptr2 = NULL;
 	int in_perf_data = FALSE;
+	int in_saved_data = FALSE;
 	char *tempbuf = NULL;
 	register int x = 0;
 	register int y = 0;
@@ -3514,6 +3521,8 @@ int parse_check_output(char *buf, char **short_output, char **long_output, char 
 		*long_output = NULL;
 	if(perf_data)
 		*perf_data = NULL;
+	if (saved_data)
+		*saved_data = NULL;
 
 	/* nothing to do */
 	if(buf == NULL || !strcmp(buf, ""))
@@ -3524,6 +3533,7 @@ int parse_check_output(char *buf, char **short_output, char **long_output, char 
 	/* initialize dynamic buffers (1KB chunk size) */
 	dbuf_init(&db1, dbuf_chunk);
 	dbuf_init(&db2, dbuf_chunk);
+	dbuf_init(&db3, dbuf_chunk);
 
 	/* unescape newlines and escaped backslashes first */
 	if(newlines_are_escaped == TRUE) {
@@ -3568,67 +3578,89 @@ int parse_check_output(char *buf, char **short_output, char **long_output, char 
 			buf[x] = '\x0';
 			if((tempbuf = (char *)strdup(buf))) {
 
-				/* first line contains short plugin output and optional perf data */
-				if(current_line == 1) {
-
-					/* get the short plugin output */
-					if((ptr = strtok(tempbuf, "|"))) {
-						if(short_output)
-							*short_output = (char *)strdup(ptr);
-
-						/* get the optional perf data */
-						if((ptr = strtok(NULL, "\n")))
-							dbuf_strcat(&db2, ptr);
-						}
+				/*in saved data */
+				if (in_saved_data == TRUE) {
+					dbuf_strcat(&db3, "\n");
+					dbuf_strcat(&db3, tempbuf);
 					}
 
-				/* additional lines contain long plugin output and optional perf data */
-				else {
-
-					/* rest of the output is perf data */
-					if(in_perf_data == TRUE) {
+				/* in perf data, we may have still have saved data at the end */
+				else if (in_perf_data == TRUE) {
+					/* saved data separator has been found */
+					if ((ptr2 = strstr(tempbuf,"||"))) {
+						*ptr2='\0';
+						dbuf_strcat(&db2,tempbuf);
+						*ptr2='|';
+						ptr2++;ptr2++;
+						dbuf_strcat(&db3,ptr2);
+						in_saved_data = TRUE;
+						}
+					else {
 						dbuf_strcat(&db2, tempbuf);
 						dbuf_strcat(&db2, " ");
 						}
+					}
 
-					/* we're still in long output */
-					else {
+				/* we're still in status data output (either short or multi-line) */
+				else {
 
-						/* perf data separator has been found */
-						if(strstr(tempbuf, "|")) {
-
-							/* NOTE: strtok() causes problems if first character of tempbuf='|', so use my_strtok() instead */
-							/* get the remaining long plugin output */
-							if((ptr = my_strtok(tempbuf, "|"))) {
-
-								if(current_line > 2)
-									dbuf_strcat(&db1, "\n");
-								dbuf_strcat(&db1, ptr);
-
-								/* get the perf data */
-								if((ptr = my_strtok(NULL, "\n"))) {
-									dbuf_strcat(&db2, ptr);
-									dbuf_strcat(&db2, " ");
-									}
-								}
-
-							/* set the perf data flag */
-							in_perf_data = TRUE;
+					/* perf data separator has been found */
+					if((ptr=strchr(tempbuf, '|'))) {
+						*ptr='\0';
+	
+						/* This may be changing previous Nagios logic or fixes a bug -
+						 * I'm under the impression that before if short_output was not enabled
+						 * then first line would have been lost. Now if its not enabled then first
+						 * line goes into long output. William L. */
+						if (current_line==1 && short_output) {
+							*short_output = (char*) strndup(tempbuf,(ptr-tempbuf));
+							}
+						else {
+							if(current_line > 2)
+								dbuf_strcat(&db1, "\n");
+							dbuf_strcat(&db1, ptr);
 							}
 
-						/* just long output */
+						*ptr='|';
+						ptr++;
+						if(*ptr=='|') { /* we have "||" i.e. no perfdata, just saved data */
+							ptr++;
+							dbuf_strcat(&db3, ptr);
+							in_saved_data = TRUE;
+							}
+						else { 	/* we have perf data */
+							if ((ptr2 = strstr(ptr, "||"))) { /* and saved data */
+								*ptr2='\0';
+								dbuf_strcat(&db2,ptr);
+								*ptr2='|';
+								ptr2++; ptr2++;
+								dbuf_strcat(&db3,ptr2);
+								in_saved_data = TRUE;
+								}
+							else { /* only perf data */
+								dbuf_strcat(&db2,ptr);
+								in_perf_data = TRUE;
+								}
+							}
+						}
+
+					/* just status data output */
+					else {
+						if (current_line==1 && short_output) {
+							*short_output = (char*) strndup(tempbuf,(ptr-tempbuf));
+							}
 						else {
 							if(current_line > 2)
 								dbuf_strcat(&db1, "\n");
 							dbuf_strcat(&db1, tempbuf);
 							}
+							
 						}
 					}
 
 				my_free(tempbuf);
 				tempbuf = NULL;
 				}
-
 
 			/* shift data back to front of buffer and adjust counters */
 			memmove((void *)&buf[0], (void *)&buf[x + 1], (size_t)((int)used_buf - x - 1));
@@ -3674,17 +3706,22 @@ int parse_check_output(char *buf, char **short_output, char **long_output, char 
 	if(perf_data && (db2.buf && strcmp(db2.buf, "")))
 		*perf_data = (char *)strdup(db2.buf);
 
+	/* saved data */
+	if(saved_data && (db3.buf && strcmp(db3.buf, "")))
+		*saved_data = (char *)strdup(db3.buf);
+
 	/* strip short output and perf data */
 	if(short_output)
 		strip(*short_output);
 	if(perf_data)
 		strip(*perf_data);
+	if(saved_data)
+		strip(*saved_data);
 
 	/* free dynamic buffers */
 	dbuf_free(&db1);
 	dbuf_free(&db2);
+	dbuf_free(&db3);
 
 	return OK;
 	}
-
-
