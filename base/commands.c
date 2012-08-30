@@ -115,8 +115,6 @@ int process_external_commands_from_file(char *fname, int delete_file) {
 	return OK;
 	}
 
-
-
 /* top-level external command processor */
 int process_external_command1(char *cmd) {
 	char *temp_buffer = NULL;
@@ -125,40 +123,48 @@ int process_external_command1(char *cmd) {
 	time_t entry_time = 0L;
 	int command_type = CMD_NONE;
 	char *temp_ptr = NULL;
+	char *sep_buffer = NULL;
 
 	log_debug_info(DEBUGL_FUNCTIONS, 0, "process_external_command1()\n");
 
 	if(cmd == NULL)
 		return ERROR;
-
+	
 	/* strip the command of newlines and carriage returns */
 	strip(cmd);
 
 	log_debug_info(DEBUGL_EXTERNALCOMMANDS, 2, "Raw command entry: %s\n", cmd);
 
+	sep_buffer = strdup(cmd);
+
 	/* get the command entry time */
-	if((temp_ptr = my_strtok(cmd, "[")) == NULL)
-		return ERROR;
-	if((temp_ptr = my_strtok(NULL, "]")) == NULL)
-		return ERROR;
+	if((temp_ptr = my_strsep(&sep_buffer, "[]")) == NULL ||
+	   (temp_ptr = my_strsep(&sep_buffer, "[]")) == NULL) {
+		  my_free(sep_buffer);
+		  return ERROR;
+		}
 	entry_time = (time_t)strtoul(temp_ptr, NULL, 10);
 
 	/* get the command identifier */
-	if((temp_ptr = my_strtok(NULL, ";")) == NULL)
+	if((temp_ptr = my_strsep(&sep_buffer, ";")) == NULL ||
+	   (command_id = (char *)strdup(temp_ptr + 1)) == NULL) {
+		my_free(sep_buffer);
 		return ERROR;
-	if((command_id = (char *)strdup(temp_ptr + 1)) == NULL)
-		return ERROR;
-
+	}
+	
 	/* get the command arguments */
-	if((temp_ptr = my_strtok(NULL, "\n")) == NULL)
+	if((temp_ptr = my_strsep(&sep_buffer, "\n")) == NULL)
 		args = (char *)strdup("");
 	else
 		args = (char *)strdup(temp_ptr);
+	
+	my_free(sep_buffer);
+
 	if(args == NULL) {
 		my_free(command_id);
 		return ERROR;
 		}
-
+		
 	/* decide what type of command this is... */
 
 	/**************************/
@@ -665,8 +671,6 @@ int process_external_command1(char *cmd) {
 	return OK;
 	}
 
-
-
 /* top-level processor for a single external command */
 int process_external_command2(int cmd, time_t entry_time, char *args) {
 
@@ -892,7 +896,6 @@ int process_external_command2(int cmd, time_t entry_time, char *args) {
 			process_servicegroup_command(cmd, entry_time, args);
 			break;
 
-
 			/**********************************/
 			/**** CONTACT-RELATED COMMANDS ****/
 			/**********************************/
@@ -903,7 +906,6 @@ int process_external_command2(int cmd, time_t entry_time, char *args) {
 		case CMD_DISABLE_CONTACT_SVC_NOTIFICATIONS:
 			process_contact_command(cmd, entry_time, args);
 			break;
-
 
 			/***************************************/
 			/**** CONTACTGROUP-RELATED COMMANDS ****/
@@ -916,11 +918,9 @@ int process_external_command2(int cmd, time_t entry_time, char *args) {
 			process_contactgroup_command(cmd, entry_time, args);
 			break;
 
-
 			/***************************/
 			/**** UNSORTED COMMANDS ****/
 			/***************************/
-
 
 		case CMD_ADD_HOST_COMMENT:
 		case CMD_ADD_SVC_COMMENT:
@@ -1043,21 +1043,17 @@ int process_external_command2(int cmd, time_t entry_time, char *args) {
 			cmd_change_object_custom_var(cmd, args);
 			break;
 
-
 			/***********************/
 			/**** MISC COMMANDS ****/
 			/***********************/
-
 
 		case CMD_PROCESS_FILE:
 			cmd_process_external_commands_from_file(cmd, args);
 			break;
 
-
 			/*************************/
 			/**** CUSTOM COMMANDS ****/
 			/*************************/
-
 
 		case CMD_CUSTOM_COMMAND:
 			/* custom commands aren't handled internally by Nagios, but may be by NEB modules */
@@ -1070,9 +1066,9 @@ int process_external_command2(int cmd, time_t entry_time, char *args) {
 
 	return OK;
 	}
-
-
+	
 /* processes an external host command */
+/* TODO: Are we sure there were no memory leaks here? I added freeing of buf[.] and I'm not sure about couple others. [WL] */
 int process_host_command(int cmd, time_t entry_time, char *args) {
 	char *host_name = NULL;
 	host *temp_host = NULL;
@@ -1080,17 +1076,27 @@ int process_host_command(int cmd, time_t entry_time, char *args) {
 	servicesmember *temp_servicesmember = NULL;
 	char *str = NULL;
 	char *buf[2] = {NULL, NULL};
+	char *sep_buffer = NULL;
 	int intval = 0;
 
-	printf("ARGS: %s\n", args);
+	log_debug_info(DEBUGL_FUNCTIONS, 0, "process_host_command()\n");
+	
+	if (args == NULL) return ERROR;
+	
+	log_debug_info(DEBUGL_EXTERNALCOMMANDS, 2, "process_host command arguments: %s\n", args);
+	
+	/* TODO: Found this raw printf. I think this was here for debugging. Somebody else please verify.
+	 * printf("ARGS: %s\n", args);
+	 */
 
+	sep_buffer = (char *)strdup(args);
+	
 	/* get the host name */
-	if((host_name = my_strtok(args, ";")) == NULL)
+	if((host_name = my_strsep(&sep_buffer, ";")) == NULL ||
+	   (temp_host = find_host(host_name)) == NULL) {
+		my_free(sep_buffer);
 		return ERROR;
-
-	/* find the host */
-	if((temp_host = find_host(host_name)) == NULL)
-		return ERROR;
+	}
 
 	switch(cmd) {
 
@@ -1183,49 +1189,60 @@ int process_host_command(int cmd, time_t entry_time, char *args) {
 			break;
 
 		case CMD_SET_HOST_NOTIFICATION_NUMBER:
-			if((str = my_strtok(NULL, ";"))) {
+			if((str = my_strsep(&sep_buffer, ";"))) {
 				intval = atoi(str);
 				set_host_notification_number(temp_host, intval);
 				}
 			break;
 
 		case CMD_SEND_CUSTOM_HOST_NOTIFICATION:
-			if((str = my_strtok(NULL, ";")))
+			if((str = my_strsep(&sep_buffer, ";")))
 				intval = atoi(str);
-			str = my_strtok(NULL, ";");
+			str = my_strsep(&sep_buffer, ";");
 			if(str)
 				buf[0] = strdup(str);
-			str = my_strtok(NULL, ";");
+			str = my_strsep(&sep_buffer, ";");
 			if(str)
 				buf[1] = strdup(str);
 			if(buf[0] && buf[1])
 				host_notification(temp_host, NOTIFICATION_CUSTOM, buf[0], buf[1], intval);
+			my_free(buf[0]);
+			my_free(buf[1]);
 			break;
 
 		default:
 			break;
 		}
 
+	my_free(sep_buffer);
+		
 	return OK;
 	}
 
-
 /* processes an external hostgroup command */
 int process_hostgroup_command(int cmd, time_t entry_time, char *args) {
-	char *hostgroup_name = NULL;
+	char *str = NULL;
 	hostgroup *temp_hostgroup = NULL;
 	hostsmember *temp_member = NULL;
 	host *temp_host = NULL;
 	service *temp_service = NULL;
 	servicesmember *temp_servicesmember = NULL;
 
+	log_debug_info(DEBUGL_FUNCTIONS, 0, "process_hostgroup_command()\n");
+	
 	/* get the hostgroup name */
-	if((hostgroup_name = my_strtok(args, ";")) == NULL)
-		return ERROR;
-
-	/* find the hostgroup */
-	if((temp_hostgroup = find_hostgroup(hostgroup_name)) == NULL)
-		return ERROR;
+	if (args==NULL || (str = strchr(args,';'))==NULL)
+                return ERROR;
+        else {
+                /* find the hostgroup */
+                *str='\0';
+                temp_hostgroup = find_hostgroup(args);
+                *str=';';
+                if (temp_hostgroup == NULL) {
+                        log_debug_info(DEBUGL_EXTERNALCOMMANDS, 2, "process_hostgroup_command() ars: %s - hostgroup not found\n", args);
+                        return ERROR;
+                        }
+                }
 
 	/* loop through all hosts in the hostgroup */
 	for(temp_member = temp_hostgroup->members; temp_member != NULL; temp_member = temp_member->next) {
@@ -1305,8 +1322,6 @@ int process_hostgroup_command(int cmd, time_t entry_time, char *args) {
 	return OK;
 	}
 
-
-
 /* processes an external service command */
 int process_service_command(int cmd, time_t entry_time, char *args) {
 	char *host_name = NULL;
@@ -1315,18 +1330,23 @@ int process_service_command(int cmd, time_t entry_time, char *args) {
 	char *str = NULL;
 	char *buf[2] = {NULL, NULL};
 	int intval = 0;
+	char *sep_buffer;
 
-	/* get the host name */
-	if((host_name = my_strtok(args, ";")) == NULL)
-		return ERROR;
+	log_debug_info(DEBUGL_FUNCTIONS, 0, "process_service_command()\n");
+	
+	if (args == NULL) return ERROR;
+	
+	log_debug_info(DEBUGL_EXTERNALCOMMANDS, 2, "process_service_command arguments: %s\n", args);
 
-	/* get the service description */
-	if((svc_description = my_strtok(NULL, ";")) == NULL)
+	sep_buffer = (char *)strdup(args);
+	
+	/* find the host name and service */
+	if((host_name = my_strsep(&sep_buffer, ";")) == NULL ||
+	   (svc_description = my_strsep(&sep_buffer, ";")) == NULL ||
+	   (temp_service = find_service(host_name, svc_description)) == NULL) {
+		my_free(sep_buffer);
 		return ERROR;
-
-	/* find the service */
-	if((temp_service = find_service(host_name, svc_description)) == NULL)
-		return ERROR;
+		}
 
 	switch(cmd) {
 
@@ -1379,49 +1399,60 @@ int process_service_command(int cmd, time_t entry_time, char *args) {
 			break;
 
 		case CMD_SET_SVC_NOTIFICATION_NUMBER:
-			if((str = my_strtok(NULL, ";"))) {
+			if((str = my_strsep(&sep_buffer, ";"))) {
 				intval = atoi(str);
 				set_service_notification_number(temp_service, intval);
 				}
 			break;
 
 		case CMD_SEND_CUSTOM_SVC_NOTIFICATION:
-			if((str = my_strtok(NULL, ";")))
+			if((str = my_strsep(&sep_buffer, ";")))
 				intval = atoi(str);
-			str = my_strtok(NULL, ";");
+			str = my_strsep(&sep_buffer, ";");
 			if(str)
 				buf[0] = strdup(str);
-			str = my_strtok(NULL, ";");
+			str = my_strsep(&sep_buffer, ";");
 			if(str)
 				buf[1] = strdup(str);
 			if(buf[0] && buf[1])
 				service_notification(temp_service, NOTIFICATION_CUSTOM, buf[0], buf[1], intval);
+			my_free(buf[0]);
+			my_free(buf[1]);
 			break;
 
 		default:
 			break;
 		}
-
+		
+	my_free(sep_buffer);
+		
 	return OK;
 	}
 
-
 /* processes an external servicegroup command */
 int process_servicegroup_command(int cmd, time_t entry_time, char *args) {
-	char *servicegroup_name = NULL;
+	char *str = NULL;
 	servicegroup *temp_servicegroup = NULL;
 	servicesmember *temp_member = NULL;
 	host *temp_host = NULL;
 	host *last_host = NULL;
 	service *temp_service = NULL;
 
+	log_debug_info(DEBUGL_FUNCTIONS, 0, "process_servicegroup_command()\n");
+	
 	/* get the servicegroup name */
-	if((servicegroup_name = my_strtok(args, ";")) == NULL)
-		return ERROR;
-
-	/* find the servicegroup */
-	if((temp_servicegroup = find_servicegroup(servicegroup_name)) == NULL)
-		return ERROR;
+	if (args==NULL || (str = strchr(args,';'))==NULL)
+                return ERROR;
+        else {
+                /* find the servicegroup */
+                *str='\0';
+                temp_servicegroup = find_servicegroup(args);
+                *str=';';
+                if (temp_servicegroup == NULL) {
+                        log_debug_info(DEBUGL_EXTERNALCOMMANDS, 2, "process_servicegroup_command() ars: %s - servicegroup not found\n", args);
+                        return ERROR;
+                        }
+                }
 
 	switch(cmd) {
 
@@ -1531,20 +1562,26 @@ int process_servicegroup_command(int cmd, time_t entry_time, char *args) {
 	return OK;
 	}
 
-
-
 /* processes an external contact command */
 int process_contact_command(int cmd, time_t entry_time, char *args) {
-	char *contact_name = NULL;
+	char *str = NULL;
 	contact *temp_contact = NULL;
 
+	log_debug_info(DEBUGL_FUNCTIONS, 0, "process_contact_command()\n");
+	
 	/* get the contact name */
-	if((contact_name = my_strtok(args, ";")) == NULL)
-		return ERROR;
-
-	/* find the contact */
-	if((temp_contact = find_contact(contact_name)) == NULL)
-		return ERROR;
+	if (args==NULL || (str = strchr(args,';'))==NULL)
+                return ERROR;
+        else {
+                /* find the contact */
+                *str='\0';
+                temp_contact = find_contact(args);
+                *str=';';
+                if (temp_contact == NULL) {
+                        log_debug_info(DEBUGL_EXTERNALCOMMANDS, 2, "process_contact_command() ars: %s - contact not found\n", args);
+                        return ERROR;
+                        }
+                }
 
 	switch(cmd) {
 
@@ -1571,21 +1608,28 @@ int process_contact_command(int cmd, time_t entry_time, char *args) {
 	return OK;
 	}
 
-
 /* processes an external contactgroup command */
 int process_contactgroup_command(int cmd, time_t entry_time, char *args) {
-	char *contactgroup_name = NULL;
+	char *str = NULL;
 	contactgroup *temp_contactgroup = NULL;
 	contactsmember *temp_member = NULL;
 	contact *temp_contact = NULL;
 
-	/* get the contactgroup name */
-	if((contactgroup_name = my_strtok(args, ";")) == NULL)
-		return ERROR;
+	log_debug_info(DEBUGL_FUNCTIONS, 0, "process_contactgroup_command()\n");
 
-	/* find the contactgroup */
-	if((temp_contactgroup = find_contactgroup(contactgroup_name)) == NULL)
-		return ERROR;
+	/* get the contactgroup name */
+	if (args==NULL || (str = strchr(args,';'))==NULL)
+                return ERROR;
+        else {
+                /* find the contactgroup */
+                *str='\0';
+                temp_contactgroup = find_contactgroup(args);
+                *str=';';
+                if (temp_contactgroup == NULL) {
+                        log_debug_info(DEBUGL_EXTERNALCOMMANDS, 2, "process_contactgroup_command() ars: %s - contactgroup not found\n", args);
+                        return ERROR;
+                        }
+                }
 
 	switch(cmd) {
 
@@ -1632,8 +1676,6 @@ int process_contactgroup_command(int cmd, time_t entry_time, char *args) {
 	return OK;
 	}
 
-
-
 /******************************************************************/
 /*************** EXTERNAL COMMAND IMPLEMENTATIONS  ****************/
 /******************************************************************/
@@ -1648,55 +1690,66 @@ int cmd_add_comment(int cmd, time_t entry_time, char *args) {
 	char *user = NULL;
 	char *comment_data = NULL;
 	int persistent = 0;
-	int result = 0;
+	char *sep_buffer = NULL;
+	int result = OK;
 
+	if (args == NULL) return ERROR;
+
+	sep_buffer = (char *)strdup(args);
+	
 	/* get the host name */
-	if((host_name = my_strtok(args, ";")) == NULL)
-		return ERROR;
+	if((host_name = my_strsep(&sep_buffer, ";")) == NULL ||
+	   (temp_host = find_host(host_name)) == NULL)
+		result = ERROR;
 
 	/* if we're adding a service comment...  */
-	if(cmd == CMD_ADD_SVC_COMMENT) {
+	if(result!=ERROR && cmd == CMD_ADD_SVC_COMMENT) {
 
 		/* get the service description */
-		if((svc_description = my_strtok(NULL, ";")) == NULL)
-			return ERROR;
+		if((svc_description = my_strsep(&sep_buffer, ";")) == NULL)
+			result = ERROR;
 
 		/* verify that the service is valid */
-		if((temp_service = find_service(host_name, svc_description)) == NULL)
-			return ERROR;
+		if(result!= ERROR && (temp_service = find_service(host_name, svc_description)) == NULL)
+			result = ERROR;
 		}
 
 	/* else verify that the host is valid */
-	if((temp_host = find_host(host_name)) == NULL)
-		return ERROR;
+	if(result!=ERROR && (temp_host = find_host(host_name)) == NULL)
+		result = ERROR;
 
 	/* get the persistent flag */
-	if((temp_ptr = my_strtok(NULL, ";")) == NULL)
-		return ERROR;
-	persistent = atoi(temp_ptr);
-	if(persistent > 1)
-		persistent = 1;
-	else if(persistent < 0)
-		persistent = 0;
+	if(result!=ERROR && (temp_ptr = my_strsep(&sep_buffer, ";")) == NULL)
+		result = ERROR;
+	
+	if(result!=ERROR) {
+		persistent = atoi(temp_ptr);
+		if(persistent > 1)
+		      persistent = 1;
+		else if(persistent < 0)
+		      persistent = 0;
+		}
 
 	/* get the name of the user who entered the comment */
-	if((user = my_strtok(NULL, ";")) == NULL)
-		return ERROR;
+	if(result!=ERROR && (user = my_strsep(&sep_buffer, ";")) == NULL)
+		result=ERROR;
 
 	/* get the comment */
-	if((comment_data = my_strtok(NULL, "\n")) == NULL)
-		return ERROR;
+	if(result!=ERROR && (comment_data = my_strsep(&sep_buffer, "\n")) == NULL)
+		result=ERROR;
 
 	/* add the comment */
-	result = add_new_comment((cmd == CMD_ADD_HOST_COMMENT) ? HOST_COMMENT : SERVICE_COMMENT, USER_COMMENT, host_name, svc_description, entry_time, user, comment_data, persistent, COMMENTSOURCE_EXTERNAL, FALSE, (time_t)0, NULL);
+	if(result!=ERROR) {
+		result = add_new_comment((cmd == CMD_ADD_HOST_COMMENT) ? HOST_COMMENT : SERVICE_COMMENT, USER_COMMENT, host_name, svc_description, entry_time, user, comment_data, persistent, COMMENTSOURCE_EXTERNAL, FALSE, (time_t)0, NULL);
 
-	if(result < 0)
-		return ERROR;
+		if(result < 0)
+		    result=ERROR;
+		}
 
-	return OK;
+	my_free(sep_buffer);
+	
+	return result;
 	}
-
-
 
 /* removes a host or service comment from the status log */
 int cmd_delete_comment(int cmd, char *args) {
@@ -1715,39 +1768,46 @@ int cmd_delete_comment(int cmd, char *args) {
 	return OK;
 	}
 
-
-
 /* removes all comments associated with a host or service from the status log */
 int cmd_delete_all_comments(int cmd, char *args) {
 	service *temp_service = NULL;
 	host *temp_host = NULL;
 	char *host_name = NULL;
 	char *svc_description = NULL;
+	char* sep_buffer = NULL;
+	int result = OK;
 
+	if (args == NULL) return ERROR;
+	
+	sep_buffer = (char *)strdup(args);
+	    
 	/* get the host name */
-	if((host_name = my_strtok(args, ";")) == NULL)
-		return ERROR;
+	if((host_name = my_strsep(&sep_buffer, ";")) == NULL)
+		result = ERROR;
 
 	/* if we're deleting service comments...  */
-	if(cmd == CMD_DEL_ALL_SVC_COMMENTS) {
+	if(result != ERROR && cmd == CMD_DEL_ALL_SVC_COMMENTS) {
 
 		/* get the service description */
-		if((svc_description = my_strtok(NULL, ";")) == NULL)
-			return ERROR;
+		if((svc_description = my_strsep(&sep_buffer, ";")) == NULL)
+			result = ERROR;
 
 		/* verify that the service is valid */
-		if((temp_service = find_service(host_name, svc_description)) == NULL)
-			return ERROR;
+		if(result != ERROR && (temp_service = find_service(host_name, svc_description)) == NULL)
+			result = ERROR;
 		}
 
 	/* else verify that the host is valid */
-	if((temp_host = find_host(host_name)) == NULL)
-		return ERROR;
+	if(result != ERROR && (temp_host = find_host(host_name)) == NULL)
+		result = ERROR;
 
 	/* delete comments */
-	delete_all_comments((cmd == CMD_DEL_ALL_HOST_COMMENTS) ? HOST_COMMENT : SERVICE_COMMENT, host_name, svc_description);
+	if (result != ERROR)
+	      delete_all_comments((cmd == CMD_DEL_ALL_HOST_COMMENTS) ? HOST_COMMENT : SERVICE_COMMENT, host_name, svc_description);
 
-	return OK;
+	my_free(sep_buffer);
+	
+	return result;
 	}
 
 
@@ -1760,45 +1820,54 @@ int cmd_delay_notification(int cmd, char *args) {
 	char *host_name = NULL;
 	char *svc_description = NULL;
 	time_t delay_time = 0L;
+	char *sep_buffer = NULL;
+	int result = OK;
 
+	if (args==NULL) return ERROR;
+	    
+	sep_buffer = (char *)strdup(args);
+	
 	/* get the host name */
-	if((host_name = my_strtok(args, ";")) == NULL)
-		return ERROR;
+	if((host_name = my_strsep(&sep_buffer, ";")) == NULL)
+		result = ERROR;
 
 	/* if this is a service notification delay...  */
 	if(cmd == CMD_DELAY_SVC_NOTIFICATION) {
 
 		/* get the service description */
-		if((svc_description = my_strtok(NULL, ";")) == NULL)
-			return ERROR;
+		if(result != ERROR && (svc_description = my_strsep(&sep_buffer, ";")) == NULL)
+			result = ERROR;
 
 		/* verify that the service is valid */
-		if((temp_service = find_service(host_name, svc_description)) == NULL)
-			return ERROR;
+		if(result != ERROR && (temp_service = find_service(host_name, svc_description)) == NULL)
+			result = ERROR;
 		}
 
 	/* else verify that the host is valid */
 	else {
 
-		if((temp_host = find_host(host_name)) == NULL)
-			return ERROR;
+		if(result != ERROR && (temp_host = find_host(host_name)) == NULL)
+			result = ERROR;
 		}
 
 	/* get the time that we should delay until... */
-	if((temp_ptr = my_strtok(NULL, "\n")) == NULL)
-		return ERROR;
-	delay_time = strtoul(temp_ptr, NULL, 10);
+	if(result != ERROR && (temp_ptr = my_strsep(&sep_buffer, "\n")) == NULL)
+		result = ERROR;
+	
+	if(result != ERROR) {
+		delay_time = strtoul(temp_ptr, NULL, 10);
 
-	/* delay the next notification... */
-	if(cmd == CMD_DELAY_HOST_NOTIFICATION)
-		temp_host->next_host_notification = delay_time;
-	else
-		temp_service->next_notification = delay_time;
+		/* delay the next notification... */
+		if(cmd == CMD_DELAY_HOST_NOTIFICATION)
+			temp_host->next_host_notification = delay_time;
+		else
+			temp_service->next_notification = delay_time;
+		}
 
-	return OK;
+	my_free(sep_buffer);
+	
+	return result;
 	}
-
-
 
 /* schedules a host check at a particular time */
 int cmd_schedule_check(int cmd, char *args) {
@@ -1809,53 +1878,63 @@ int cmd_schedule_check(int cmd, char *args) {
 	char *host_name = NULL;
 	char *svc_description = NULL;
 	time_t delay_time = 0L;
+	char *sep_buffer = NULL;
+	int result = OK;
 
+	if (args == NULL) return ERROR;
+	    
+	sep_buffer = (char *)strdup(args);
+	
 	/* get the host name */
-	if((host_name = my_strtok(args, ";")) == NULL)
-		return ERROR;
+	if((host_name = my_strsep(&sep_buffer, ";")) == NULL)
+		result = ERROR;
 
 	if(cmd == CMD_SCHEDULE_HOST_CHECK || cmd == CMD_SCHEDULE_FORCED_HOST_CHECK || cmd == CMD_SCHEDULE_HOST_SVC_CHECKS || cmd == CMD_SCHEDULE_FORCED_HOST_SVC_CHECKS) {
 
 		/* verify that the host is valid */
-		if((temp_host = find_host(host_name)) == NULL)
-			return ERROR;
+		if(result != ERROR && (temp_host = find_host(host_name)) == NULL)
+			result = ERROR;
 		}
 
 	else {
 
 		/* get the service description */
-		if((svc_description = my_strtok(NULL, ";")) == NULL)
-			return ERROR;
+		if(result != ERROR && (svc_description = my_strsep(&sep_buffer, ";")) == NULL)
+			result = ERROR;
 
 		/* verify that the service is valid */
-		if((temp_service = find_service(host_name, svc_description)) == NULL)
-			return ERROR;
+		if(result != ERROR && (temp_service = find_service(host_name, svc_description)) == NULL)
+			result = ERROR;
 		}
 
 	/* get the next check time */
-	if((temp_ptr = my_strtok(NULL, "\n")) == NULL)
-		return ERROR;
-	delay_time = strtoul(temp_ptr, NULL, 10);
+	if(result != ERROR && (temp_ptr = my_strsep(&sep_buffer, "\n")) == NULL)
+		result = ERROR;
 
-	/* schedule the host check */
-	if(cmd == CMD_SCHEDULE_HOST_CHECK || cmd == CMD_SCHEDULE_FORCED_HOST_CHECK)
-		schedule_host_check(temp_host, delay_time, (cmd == CMD_SCHEDULE_FORCED_HOST_CHECK) ? CHECK_OPTION_FORCE_EXECUTION : CHECK_OPTION_NONE);
+	if (result != ERROR) {
+		delay_time = strtoul(temp_ptr, NULL, 10);
 
-	/* schedule service checks */
-	else if(cmd == CMD_SCHEDULE_HOST_SVC_CHECKS || cmd == CMD_SCHEDULE_FORCED_HOST_SVC_CHECKS) {
-		for(temp_servicesmember = temp_host->services; temp_servicesmember != NULL; temp_servicesmember = temp_servicesmember->next) {
-			if((temp_service = temp_servicesmember->service_ptr) == NULL)
-				continue;
-			schedule_service_check(temp_service, delay_time, (cmd == CMD_SCHEDULE_FORCED_HOST_SVC_CHECKS) ? CHECK_OPTION_FORCE_EXECUTION : CHECK_OPTION_NONE);
+		/* schedule the host check */
+		if(cmd == CMD_SCHEDULE_HOST_CHECK || cmd == CMD_SCHEDULE_FORCED_HOST_CHECK) {
+			schedule_host_check(temp_host, delay_time, (cmd == CMD_SCHEDULE_FORCED_HOST_CHECK) ? CHECK_OPTION_FORCE_EXECUTION : CHECK_OPTION_NONE);
+			}
+		/* schedule service checks */
+		else if(cmd == CMD_SCHEDULE_HOST_SVC_CHECKS || cmd == CMD_SCHEDULE_FORCED_HOST_SVC_CHECKS) {
+			for(temp_servicesmember = temp_host->services; temp_servicesmember != NULL; temp_servicesmember = temp_servicesmember->next) {
+				if((temp_service = temp_servicesmember->service_ptr) == NULL)
+				      continue;
+				schedule_service_check(temp_service, delay_time, (cmd == CMD_SCHEDULE_FORCED_HOST_SVC_CHECKS) ? CHECK_OPTION_FORCE_EXECUTION : CHECK_OPTION_NONE);
+				}
+			}
+		else	{
+			schedule_service_check(temp_service, delay_time, (cmd == CMD_SCHEDULE_FORCED_SVC_CHECK) ? CHECK_OPTION_FORCE_EXECUTION : CHECK_OPTION_NONE);
 			}
 		}
-	else
-		schedule_service_check(temp_service, delay_time, (cmd == CMD_SCHEDULE_FORCED_SVC_CHECK) ? CHECK_OPTION_FORCE_EXECUTION : CHECK_OPTION_NONE);
 
-	return OK;
+	my_free(sep_buffer);
+
+	return result;
 	}
-
-
 
 /* schedules all service checks on a host for a particular time */
 int cmd_schedule_host_service_checks(int cmd, char *args, int force) {
@@ -1865,18 +1944,19 @@ int cmd_schedule_host_service_checks(int cmd, char *args, int force) {
 	host *temp_host = NULL;
 	char *host_name = NULL;
 	time_t delay_time = 0L;
+	char *sep_buffer;
 
-	/* get the host name */
-	if((host_name = my_strtok(args, ";")) == NULL)
+	if (args == NULL) return ERROR;
+	    
+	sep_buffer = (char *)strdup(args);
+	
+	if((host_name = my_strsep(&sep_buffer, ";")) == NULL ||	   /* get the host name */
+	   (temp_host = find_host(host_name)) == NULL ||	   /* verify that the host is valid */
+	   (temp_ptr = my_strsep(&sep_buffer, "\n")) == NULL)	{  /* get the next check time */
+		my_free(sep_buffer);
 		return ERROR;
+		}
 
-	/* verify that the host is valid */
-	if((temp_host = find_host(host_name)) == NULL)
-		return ERROR;
-
-	/* get the next check time */
-	if((temp_ptr = my_strtok(NULL, "\n")) == NULL)
-		return ERROR;
 	delay_time = strtoul(temp_ptr, NULL, 10);
 
 	/* reschedule all services on the specified host */
@@ -1885,12 +1965,11 @@ int cmd_schedule_host_service_checks(int cmd, char *args, int force) {
 			continue;
 		schedule_service_check(temp_service, delay_time, (force == TRUE) ? CHECK_OPTION_FORCE_EXECUTION : CHECK_OPTION_NONE);
 		}
+		
+	my_free(sep_buffer);
 
 	return OK;
 	}
-
-
-
 
 /* schedules a program shutdown or restart */
 int cmd_signal_process(int cmd, char *args) {
@@ -1898,10 +1977,13 @@ int cmd_signal_process(int cmd, char *args) {
 	char *temp_ptr = NULL;
 
 	/* get the time to schedule the event */
-	if((temp_ptr = my_strtok(args, "\n")) == NULL)
+	if (args == NULL || (temp_ptr = strchr(args, '\n'))==NULL)
 		scheduled_time = 0L;
-	else
-		scheduled_time = strtoul(temp_ptr, NULL, 10);
+	else {
+		*temp_ptr='\0';
+		scheduled_time = strtoul(args, NULL, 10);
+		*temp_ptr='\n';
+		}
 
 	/* add a scheduled program shutdown or restart to the event list */
 	if (!schedule_new_event((cmd == CMD_SHUTDOWN_PROCESS) ? EVENT_PROGRAM_SHUTDOWN : EVENT_PROGRAM_RESTART, TRUE, scheduled_time, FALSE, 0, NULL, FALSE, NULL, NULL, 0))
@@ -1910,8 +1992,6 @@ int cmd_signal_process(int cmd, char *args) {
 	return OK;
 	}
 
-
-
 /* processes results of an external service check */
 int cmd_process_service_check_result(int cmd, time_t check_time, char *args) {
 	char *temp_ptr = NULL;
@@ -1919,46 +1999,53 @@ int cmd_process_service_check_result(int cmd, time_t check_time, char *args) {
 	char *svc_description = NULL;
 	int return_code = 0;
 	char *output = NULL;
-	int result = 0;
+	char *sep_buffer = NULL;
+	int result = OK;
 
+	if (args == NULL) return ERROR;
+
+	sep_buffer = (char *)strdup(args);
+	    
 	/* get the host name */
-	if((temp_ptr = my_strtok(args, ";")) == NULL)
-		return ERROR;
-	host_name = (char *)strdup(temp_ptr);
+	if((temp_ptr = my_strsep(&sep_buffer, ";")) == NULL)
+		result = ERROR;
+	else 
+		host_name = (char *)strdup(temp_ptr);
 
 	/* get the service description */
-	if((temp_ptr = my_strtok(NULL, ";")) == NULL) {
-		my_free(host_name);
-		return ERROR;
-		}
-	svc_description = (char *)strdup(temp_ptr);
+	if((temp_ptr = my_strsep(&sep_buffer, ";")) == NULL)
+		result = ERROR;
+	else
+		svc_description = (char *)strdup(temp_ptr);
 
 	/* get the service check return code */
-	if((temp_ptr = my_strtok(NULL, ";")) == NULL) {
-		my_free(host_name);
-		my_free(svc_description);
-		return ERROR;
-		}
-	return_code = atoi(temp_ptr);
+	if((temp_ptr = my_strsep(&sep_buffer, ";")) == NULL)
+		result = ERROR;
+	else 
+		return_code = atoi(temp_ptr);
 
-	/* get the plugin output (may be empty) */
-	if((temp_ptr = my_strtok(NULL, "\n")) == NULL)
-		output = (char *)strdup("");
-	else
-		output = (char *)strdup(temp_ptr);
+	if (result != ERROR) {
+		/* get the plugin output (may be empty) */
+		if((temp_ptr = my_strsep(&sep_buffer, "\n")) == NULL)
+		      output = (char *)strdup("");
+		else
+		      output = (char *)strdup(temp_ptr);
 
-	/* submit the passive check result */
-	result = process_passive_service_check(check_time, host_name, svc_description, return_code, output);
+		/* submit the passive check result */
+		result = process_passive_service_check(check_time, host_name, svc_description, return_code, output);
+	}
 
 	/* free memory */
-	my_free(host_name);
-	my_free(svc_description);
-	my_free(output);
+	if (host_name != NULL)
+		my_free(host_name);
+	if (svc_description != NULL)
+		my_free(svc_description);
+	if (output != NULL)
+		my_free(output);
+	my_free(sep_buffer);
 
 	return result;
 	}
-
-
 
 /* submits a passive service check result for later processing */
 int process_passive_service_check(time_t check_time, char *host_name, char *svc_description, int return_code, char *output) {
@@ -2015,44 +2102,51 @@ int process_passive_service_check(time_t check_time, char *host_name, char *svc_
 	return handle_async_service_check_result(temp_service, &cr);
 	}
 
-
-
 /* process passive host check result */
 int cmd_process_host_check_result(int cmd, time_t check_time, char *args) {
 	char *temp_ptr = NULL;
 	char *host_name = NULL;
 	int return_code = 0;
 	char *output = NULL;
-	int result = 0;
-
+	int result = OK;
+	char *sep_buffer = NULL;
+	
+	if (args == NULL) return ERROR;
+	
+	sep_buffer = (char *)strdup(args);
+	    
 	/* get the host name */
-	if((temp_ptr = my_strtok(args, ";")) == NULL)
-		return ERROR;
-	host_name = (char *)strdup(temp_ptr);
+	if((temp_ptr = my_strsep(&sep_buffer, ";")) == NULL)
+		result = ERROR;
+	else
+		host_name = (char *)strdup(temp_ptr);
 
 	/* get the host check return code */
-	if((temp_ptr = my_strtok(NULL, ";")) == NULL) {
-		my_free(host_name);
-		return ERROR;
-		}
-	return_code = atoi(temp_ptr);
-
-	/* get the plugin output (may be empty) */
-	if((temp_ptr = my_strtok(NULL, "\n")) == NULL)
-		output = (char *)strdup("");
+	if((temp_ptr = my_strsep(&sep_buffer, ";")) == NULL)
+		result = ERROR;
 	else
-		output = (char *)strdup(temp_ptr);
+		return_code = atoi(temp_ptr);
 
-	/* submit the check result */
-	result = process_passive_host_check(check_time, host_name, return_code, output);
+	if (result != ERROR) {
+		/* get the plugin output (may be empty) */
+		if((temp_ptr = my_strsep(&sep_buffer, "\n")) == NULL)
+			output = (char *)strdup("");
+		else
+			output = (char *)strdup(temp_ptr);
+
+		/* submit the check result */
+		result = process_passive_host_check(check_time, host_name, return_code, output);
+	}
 
 	/* free memory */
-	my_free(host_name);
-	my_free(output);
+	if (host_name != NULL) 
+		my_free(host_name);
+	if (output != NULL)
+		my_free(output);
+	my_free(sep_buffer);
 
 	return result;
 	}
-
 
 /* process passive host check result */
 int process_passive_host_check(time_t check_time, char *host_name, int return_code, char *output) {
@@ -2103,8 +2197,6 @@ int process_passive_host_check(time_t check_time, char *host_name, int return_co
 	return OK;
 	}
 
-
-
 /* acknowledges a host or service problem */
 int cmd_acknowledge_problem(int cmd, char *args) {
 	service *temp_service = NULL;
@@ -2117,70 +2209,81 @@ int cmd_acknowledge_problem(int cmd, char *args) {
 	int type = ACKNOWLEDGEMENT_NORMAL;
 	int notify = TRUE;
 	int persistent = TRUE;
+	char *sep_buffer = NULL;
+	int result = OK;
+	
+	if (args == NULL) return ERROR;
+	    
+	sep_buffer = (char *)strdup(args);
 
 	/* get the host name */
-	if((host_name = my_strtok(args, ";")) == NULL)
-		return ERROR;
+	if((host_name = my_strsep(&sep_buffer, ";")) == NULL)
+		result = ERROR;
 
 	/* verify that the host is valid */
-	if((temp_host = find_host(host_name)) == NULL)
-		return ERROR;
+	if(result != ERROR && (temp_host = find_host(host_name)) == NULL)
+		result = ERROR;
 
 	/* this is a service acknowledgement */
 	if(cmd == CMD_ACKNOWLEDGE_SVC_PROBLEM) {
 
 		/* get the service name */
-		if((svc_description = my_strtok(NULL, ";")) == NULL)
-			return ERROR;
+		if((svc_description = my_strsep(&sep_buffer, ";")) == NULL)
+			result = ERROR;
 
 		/* verify that the service is valid */
-		if((temp_service = find_service(temp_host->name, svc_description)) == NULL)
-			return ERROR;
+		if(result != ERROR && (temp_service = find_service(temp_host->name, svc_description)) == NULL)
+			result = ERROR;
 		}
 
 	/* get the type */
-	if((temp_ptr = my_strtok(NULL, ";")) == NULL)
-		return ERROR;
-	type = atoi(temp_ptr);
+	if((temp_ptr = my_strsep(&sep_buffer, ";")) == NULL)
+		result = ERROR;
+	else
+		type = atoi(temp_ptr);
 
 	/* get the notification option */
-	if((temp_ptr = my_strtok(NULL, ";")) == NULL)
-		return ERROR;
-	notify = (atoi(temp_ptr) > 0) ? TRUE : FALSE;
+	if((temp_ptr = my_strsep(&sep_buffer, ";")) == NULL)
+		result = ERROR;
+	else
+		notify = (atoi(temp_ptr) > 0) ? TRUE : FALSE;
 
 	/* get the persistent option */
-	if((temp_ptr = my_strtok(NULL, ";")) == NULL)
-		return ERROR;
-	persistent = (atoi(temp_ptr) > 0) ? TRUE : FALSE;
+	if((temp_ptr = my_strsep(&sep_buffer, ";")) == NULL)
+		result = ERROR;
+	else 
+		persistent = (atoi(temp_ptr) > 0) ? TRUE : FALSE;
 
 	/* get the acknowledgement author */
-	if((temp_ptr = my_strtok(NULL, ";")) == NULL)
-		return ERROR;
-	ack_author = (char *)strdup(temp_ptr);
+	if((temp_ptr = my_strsep(&sep_buffer, ";")) == NULL)
+		result = ERROR;
+	else
+		ack_author = (char *)strdup(temp_ptr);
 
 	/* get the acknowledgement data */
-	if((temp_ptr = my_strtok(NULL, "\n")) == NULL) {
-		my_free(ack_author);
-		return ERROR;
-		}
-	ack_data = (char *)strdup(temp_ptr);
-
-	/* acknowledge the host problem */
-	if(cmd == CMD_ACKNOWLEDGE_HOST_PROBLEM)
-		acknowledge_host_problem(temp_host, ack_author, ack_data, type, notify, persistent);
-
-	/* acknowledge the service problem */
+	if((temp_ptr = my_strsep(&sep_buffer, "\n")) == NULL)
+		result = ERROR;
 	else
-		acknowledge_service_problem(temp_service, ack_author, ack_data, type, notify, persistent);
+		ack_data = (char *)strdup(temp_ptr);
 
+	if (result != ERROR) {
+		/* acknowledge the host problem */
+		if(cmd == CMD_ACKNOWLEDGE_HOST_PROBLEM)
+			acknowledge_host_problem(temp_host, ack_author, ack_data, type, notify, persistent);
+		/* acknowledge the service problem */
+		else
+			acknowledge_service_problem(temp_service, ack_author, ack_data, type, notify, persistent);
+		}
+	
 	/* free memory */
-	my_free(ack_author);
-	my_free(ack_data);
+	if (ack_author != NULL)
+		my_free(ack_author);
+	if (ack_data != NULL)
+		my_free(ack_data);
+	my_free(sep_buffer);
 
-	return OK;
+	return result;
 	}
-
-
 
 /* removes a host or service acknowledgement */
 int cmd_remove_acknowledgement(int cmd, char *args) {
@@ -2188,39 +2291,46 @@ int cmd_remove_acknowledgement(int cmd, char *args) {
 	host *temp_host = NULL;
 	char *host_name = NULL;
 	char *svc_description = NULL;
+	char *sep_buffer;
+	int result = OK;
 
+	if (args == NULL) return ERROR;
+	    
+	sep_buffer = (char *)strdup(args);
+	
 	/* get the host name */
-	if((host_name = my_strtok(args, ";")) == NULL)
-		return ERROR;
+	if((host_name = my_strsep(&sep_buffer, ";")) == NULL)
+		result = ERROR;
 
 	/* verify that the host is valid */
-	if((temp_host = find_host(host_name)) == NULL)
-		return ERROR;
+	if(result != ERROR && (temp_host = find_host(host_name)) == NULL)
+		result = ERROR;
 
 	/* we are removing a service acknowledgement */
 	if(cmd == CMD_REMOVE_SVC_ACKNOWLEDGEMENT) {
 
 		/* get the service name */
-		if((svc_description = my_strtok(NULL, ";")) == NULL)
-			return ERROR;
+		if((svc_description = my_strsep(&sep_buffer, ";")) == NULL)
+			result = ERROR;
 
 		/* verify that the service is valid */
-		if((temp_service = find_service(temp_host->name, svc_description)) == NULL)
-			return ERROR;
+		if(result != ERROR && (temp_service = find_service(temp_host->name, svc_description)) == NULL)
+			result = ERROR;
 		}
 
-	/* acknowledge the host problem */
-	if(cmd == CMD_REMOVE_HOST_ACKNOWLEDGEMENT)
-		remove_host_acknowledgement(temp_host);
-
-	/* acknowledge the service problem */
-	else
-		remove_service_acknowledgement(temp_service);
-
-	return OK;
+	if (result != ERROR) {
+		/* acknowledge the host problem */
+		if(cmd == CMD_REMOVE_HOST_ACKNOWLEDGEMENT)
+			remove_host_acknowledgement(temp_host);
+		/* acknowledge the service problem */
+		else
+		      remove_service_acknowledgement(temp_service);
+		}
+	
+	my_free(sep_buffer);
+	
+	return result;
 	}
-
-
 
 /* schedules downtime for a specific host or service */
 int cmd_schedule_downtime(int cmd, time_t entry_time, char *args) {
@@ -2245,84 +2355,95 @@ int cmd_schedule_downtime(int cmd, time_t entry_time, char *args) {
 	char *author = NULL;
 	char *comment_data = NULL;
 	unsigned long downtime_id = 0L;
+	char *sep_buffer = NULL;
+	int result = OK;
+	
+	if (args == NULL) return ERROR;
+	
+	sep_buffer = (char *)strdup(args);
 
 	if(cmd == CMD_SCHEDULE_HOSTGROUP_HOST_DOWNTIME || cmd == CMD_SCHEDULE_HOSTGROUP_SVC_DOWNTIME) {
 
 		/* get the hostgroup name */
-		if((hostgroup_name = my_strtok(args, ";")) == NULL)
-			return ERROR;
+		if((hostgroup_name = my_strsep(&sep_buffer, ";")) == NULL)
+			result = ERROR;
 
 		/* verify that the hostgroup is valid */
-		if((temp_hostgroup = find_hostgroup(hostgroup_name)) == NULL)
-			return ERROR;
+		if(result != ERROR && (temp_hostgroup = find_hostgroup(hostgroup_name)) == NULL)
+			result = ERROR;
 		}
 
 	else if(cmd == CMD_SCHEDULE_SERVICEGROUP_HOST_DOWNTIME || cmd == CMD_SCHEDULE_SERVICEGROUP_SVC_DOWNTIME) {
 
 		/* get the servicegroup name */
-		if((servicegroup_name = my_strtok(args, ";")) == NULL)
-			return ERROR;
+		if((servicegroup_name = my_strsep(&sep_buffer, ";")) == NULL)
+			result = ERROR;
 
 		/* verify that the servicegroup is valid */
-		if((temp_servicegroup = find_servicegroup(servicegroup_name)) == NULL)
-			return ERROR;
+		if(result != ERROR && (temp_servicegroup = find_servicegroup(servicegroup_name)) == NULL)
+			result = ERROR;
 		}
 
 	else {
 
 		/* get the host name */
-		if((host_name = my_strtok(args, ";")) == NULL)
-			return ERROR;
+		if((host_name = my_strsep(&sep_buffer, ";")) == NULL)
+			result = ERROR;
 
 		/* verify that the host is valid */
-		if((temp_host = find_host(host_name)) == NULL)
-			return ERROR;
+		if(result != ERROR && (temp_host = find_host(host_name)) == NULL)
+			result = ERROR;
 
 		/* this is a service downtime */
 		if(cmd == CMD_SCHEDULE_SVC_DOWNTIME) {
 
 			/* get the service name */
-			if((svc_description = my_strtok(NULL, ";")) == NULL)
-				return ERROR;
+			if((svc_description = my_strsep(&sep_buffer, ";")) == NULL)
+				result = ERROR;
 
 			/* verify that the service is valid */
-			if((temp_service = find_service(temp_host->name, svc_description)) == NULL)
+			if(result != ERROR && (temp_service = find_service(temp_host->name, svc_description)) == NULL)
 				return ERROR;
 			}
 		}
 
 	/* get the start time */
-	if((temp_ptr = my_strtok(NULL, ";")) == NULL)
-		return ERROR;
-	start_time = (time_t)strtoul(temp_ptr, NULL, 10);
+	if((temp_ptr = my_strsep(&sep_buffer, ";")) == NULL)
+		result = ERROR;
+	else
+		start_time = (time_t)strtoul(temp_ptr, NULL, 10);
 
 	/* get the end time */
-	if((temp_ptr = my_strtok(NULL, ";")) == NULL)
-		return ERROR;
-	end_time = (time_t)strtoul(temp_ptr, NULL, 10);
+	if((temp_ptr = my_strsep(&sep_buffer, ";")) == NULL)
+		result = ERROR;
+	else
+		end_time = (time_t)strtoul(temp_ptr, NULL, 10);
 
 	/* get the fixed flag */
-	if((temp_ptr = my_strtok(NULL, ";")) == NULL)
-		return ERROR;
-	fixed = atoi(temp_ptr);
+	if((temp_ptr = my_strsep(&sep_buffer, ";")) == NULL)
+		result = ERROR;
+	else
+		fixed = atoi(temp_ptr);
 
 	/* get the trigger id */
-	if((temp_ptr = my_strtok(NULL, ";")) == NULL)
-		return ERROR;
-	triggered_by = strtoul(temp_ptr, NULL, 10);
+	if((temp_ptr = my_strsep(&sep_buffer, ";")) == NULL)
+		result = ERROR;
+	else
+		triggered_by = strtoul(temp_ptr, NULL, 10);
 
 	/* get the duration */
-	if((temp_ptr = my_strtok(NULL, ";")) == NULL)
-		return ERROR;
-	duration = strtoul(temp_ptr, NULL, 10);
+	if((temp_ptr = my_strsep(&sep_buffer, ";")) == NULL)
+		result = ERROR;
+	else
+		duration = strtoul(temp_ptr, NULL, 10);
 
 	/* get the author */
-	if((author = my_strtok(NULL, ";")) == NULL)
-		return ERROR;
+	if((author = my_strsep(&sep_buffer, ";")) == NULL)
+		result = ERROR;
 
 	/* get the comment */
-	if((comment_data = my_strtok(NULL, ";")) == NULL)
-		return ERROR;
+	if((comment_data = my_strsep(&sep_buffer, ";")) == NULL)
+		result = ERROR;
 
 	/* check if flexible downtime demanded and duration set
 	   to non-zero.
@@ -2332,103 +2453,108 @@ int cmd_schedule_downtime(int cmd, time_t entry_time, char *args) {
 	   so if set to 0, bail out as a duration>0 is needed. 	   */
 
 	if(fixed == 0 && duration == 0)
-		return ERROR;
+		result = ERROR;
 
+	if (result != ERROR) {
+		/* duration should be auto-calculated, not user-specified */
+		if(fixed > 0)
+			duration = (unsigned long)(end_time - start_time);
 
-	/* duration should be auto-calculated, not user-specified */
-	if(fixed > 0)
-		duration = (unsigned long)(end_time - start_time);
+		/* schedule downtime */
+		switch(cmd) {
 
-	/* schedule downtime */
-	switch(cmd) {
+			case CMD_SCHEDULE_HOST_DOWNTIME:
+				schedule_downtime(HOST_DOWNTIME, host_name, NULL, entry_time, author, comment_data, start_time, end_time, fixed, triggered_by, duration, &downtime_id);
+				break;
 
-		case CMD_SCHEDULE_HOST_DOWNTIME:
-			schedule_downtime(HOST_DOWNTIME, host_name, NULL, entry_time, author, comment_data, start_time, end_time, fixed, triggered_by, duration, &downtime_id);
-			break;
+			case CMD_SCHEDULE_SVC_DOWNTIME:
+				schedule_downtime(SERVICE_DOWNTIME, host_name, svc_description, entry_time, author, comment_data, start_time, end_time, fixed, triggered_by, duration, &downtime_id);
+				break;
 
-		case CMD_SCHEDULE_SVC_DOWNTIME:
-			schedule_downtime(SERVICE_DOWNTIME, host_name, svc_description, entry_time, author, comment_data, start_time, end_time, fixed, triggered_by, duration, &downtime_id);
-			break;
-
-		case CMD_SCHEDULE_HOST_SVC_DOWNTIME:
-			for(temp_servicesmember = temp_host->services; temp_servicesmember != NULL; temp_servicesmember = temp_servicesmember->next) {
-				if((temp_service = temp_servicesmember->service_ptr) == NULL)
-					continue;
-				schedule_downtime(SERVICE_DOWNTIME, host_name, temp_service->description, entry_time, author, comment_data, start_time, end_time, fixed, triggered_by, duration, &downtime_id);
-				}
-			break;
-
-		case CMD_SCHEDULE_HOSTGROUP_HOST_DOWNTIME:
-			for(temp_hgmember = temp_hostgroup->members; temp_hgmember != NULL; temp_hgmember = temp_hgmember->next)
-				schedule_downtime(HOST_DOWNTIME, temp_hgmember->host_name, NULL, entry_time, author, comment_data, start_time, end_time, fixed, triggered_by, duration, &downtime_id);
-			break;
-
-		case CMD_SCHEDULE_HOSTGROUP_SVC_DOWNTIME:
-			for(temp_hgmember = temp_hostgroup->members; temp_hgmember != NULL; temp_hgmember = temp_hgmember->next) {
-				if((temp_host = temp_hgmember->host_ptr) == NULL)
-					continue;
+			case CMD_SCHEDULE_HOST_SVC_DOWNTIME:
 				for(temp_servicesmember = temp_host->services; temp_servicesmember != NULL; temp_servicesmember = temp_servicesmember->next) {
 					if((temp_service = temp_servicesmember->service_ptr) == NULL)
-						continue;
-					schedule_downtime(SERVICE_DOWNTIME, temp_service->host_name, temp_service->description, entry_time, author, comment_data, start_time, end_time, fixed, triggered_by, duration, &downtime_id);
+					      continue;
+					schedule_downtime(SERVICE_DOWNTIME, host_name, temp_service->description, entry_time, author, comment_data, start_time, end_time, fixed, triggered_by, duration, &downtime_id);
 					}
-				}
-			break;
+				break;
 
-		case CMD_SCHEDULE_SERVICEGROUP_HOST_DOWNTIME:
-			last_host = NULL;
-			for(temp_sgmember = temp_servicegroup->members; temp_sgmember != NULL; temp_sgmember = temp_sgmember->next) {
-				temp_host = find_host(temp_sgmember->host_name);
-				if(temp_host == NULL)
-					continue;
-				if(last_host == temp_host)
-					continue;
-				schedule_downtime(HOST_DOWNTIME, temp_sgmember->host_name, NULL, entry_time, author, comment_data, start_time, end_time, fixed, triggered_by, duration, &downtime_id);
-				last_host = temp_host;
-				}
-			break;
+			case CMD_SCHEDULE_HOSTGROUP_HOST_DOWNTIME:
+				for(temp_hgmember = temp_hostgroup->members; temp_hgmember != NULL; temp_hgmember = temp_hgmember->next)
+					schedule_downtime(HOST_DOWNTIME, temp_hgmember->host_name, NULL, entry_time, author, comment_data, start_time, end_time, fixed, triggered_by, duration, &downtime_id);
+				break;
 
-		case CMD_SCHEDULE_SERVICEGROUP_SVC_DOWNTIME:
-			for(temp_sgmember = temp_servicegroup->members; temp_sgmember != NULL; temp_sgmember = temp_sgmember->next)
-				schedule_downtime(SERVICE_DOWNTIME, temp_sgmember->host_name, temp_sgmember->service_description, entry_time, author, comment_data, start_time, end_time, fixed, triggered_by, duration, &downtime_id);
-			break;
+			case CMD_SCHEDULE_HOSTGROUP_SVC_DOWNTIME:
+				for(temp_hgmember = temp_hostgroup->members; temp_hgmember != NULL; temp_hgmember = temp_hgmember->next) {
+					if((temp_host = temp_hgmember->host_ptr) == NULL)
+						continue;
+					for(temp_servicesmember = temp_host->services; temp_servicesmember != NULL; temp_servicesmember = temp_servicesmember->next) {
+						if((temp_service = temp_servicesmember->service_ptr) == NULL)
+							continue;
+						schedule_downtime(SERVICE_DOWNTIME, temp_service->host_name, temp_service->description, entry_time, author, comment_data, start_time, end_time, fixed, triggered_by, duration, &downtime_id);
+						}
+					}
+				break;
 
-		case CMD_SCHEDULE_AND_PROPAGATE_HOST_DOWNTIME:
+			case CMD_SCHEDULE_SERVICEGROUP_HOST_DOWNTIME:
+				last_host = NULL;
+				for(temp_sgmember = temp_servicegroup->members; temp_sgmember != NULL; temp_sgmember = temp_sgmember->next) {
+					temp_host = find_host(temp_sgmember->host_name);
+					if(temp_host == NULL)
+						continue;
+					if(last_host == temp_host)
+						continue;
+					schedule_downtime(HOST_DOWNTIME, temp_sgmember->host_name, NULL, entry_time, author, comment_data, start_time, end_time, fixed, triggered_by, duration, &downtime_id);
+					last_host = temp_host;
+					}
+				break;
 
-			/* schedule downtime for "parent" host */
-			schedule_downtime(HOST_DOWNTIME, host_name, NULL, entry_time, author, comment_data, start_time, end_time, fixed, triggered_by, duration, &downtime_id);
+			case CMD_SCHEDULE_SERVICEGROUP_SVC_DOWNTIME:
+				for(temp_sgmember = temp_servicegroup->members; temp_sgmember != NULL; temp_sgmember = temp_sgmember->next)
+					schedule_downtime(SERVICE_DOWNTIME, temp_sgmember->host_name, temp_sgmember->service_description, entry_time, author, comment_data, start_time, end_time, fixed, triggered_by, duration, &downtime_id);
+				break;
 
-			/* schedule (non-triggered) downtime for all child hosts */
-			schedule_and_propagate_downtime(temp_host, entry_time, author, comment_data, start_time, end_time, fixed, 0, duration);
-			break;
+			case CMD_SCHEDULE_AND_PROPAGATE_HOST_DOWNTIME:
 
-		case CMD_SCHEDULE_AND_PROPAGATE_TRIGGERED_HOST_DOWNTIME:
+				/* schedule downtime for "parent" host */
+				schedule_downtime(HOST_DOWNTIME, host_name, NULL, entry_time, author, comment_data, start_time, end_time, fixed, triggered_by, duration, &downtime_id);
 
-			/* schedule downtime for "parent" host */
-			schedule_downtime(HOST_DOWNTIME, host_name, NULL, entry_time, author, comment_data, start_time, end_time, fixed, triggered_by, duration, &downtime_id);
+				/* schedule (non-triggered) downtime for all child hosts */
+				schedule_and_propagate_downtime(temp_host, entry_time, author, comment_data, start_time, end_time, fixed, 0, duration);
+				break;
 
-			/* schedule triggered downtime for all child hosts */
-			schedule_and_propagate_downtime(temp_host, entry_time, author, comment_data, start_time, end_time, fixed, downtime_id, duration);
-			break;
+			case CMD_SCHEDULE_AND_PROPAGATE_TRIGGERED_HOST_DOWNTIME:
 
-		default:
-			break;
+				/* schedule downtime for "parent" host */
+				schedule_downtime(HOST_DOWNTIME, host_name, NULL, entry_time, author, comment_data, start_time, end_time, fixed, triggered_by, duration, &downtime_id);
+
+				/* schedule triggered downtime for all child hosts */
+				schedule_and_propagate_downtime(temp_host, entry_time, author, comment_data, start_time, end_time, fixed, downtime_id, duration);
+				break;
+
+			default:
+				break;
+			}
 		}
 
-	return OK;
+	my_free(sep_buffer);
+
+	return result;
 	}
-
-
 
 /* deletes scheduled host or service downtime */
 int cmd_delete_downtime(int cmd, char *args) {
 	unsigned long downtime_id = 0L;
 	char *temp_ptr = NULL;
 
+	if (args == NULL) return ERROR;
+
 	/* get the id of the downtime to delete */
-	if((temp_ptr = my_strtok(args, "\n")) == NULL)
-		return ERROR;
-	downtime_id = strtoul(temp_ptr, NULL, 10);
+	if((temp_ptr = strchr(args,'\n')) != NULL)
+	      *temp_ptr = '\0';
+    	downtime_id = strtoul(args, NULL, 10);
+	if (temp_ptr !=NULL)
+	      *temp_ptr = '\n';
 
 	if(cmd == CMD_DEL_HOST_DOWNTIME)
 		unschedule_downtime(HOST_DOWNTIME, downtime_id);
@@ -2437,7 +2563,6 @@ int cmd_delete_downtime(int cmd, char *args) {
 
 	return OK;
 	}
-
 
 /* Opsview enhancements: some of these commands are now "distributable" as no downtime ids are used */
 /* Deletes scheduled host and service downtime based on hostname and optionally other filter arguments */
@@ -2449,36 +2574,40 @@ int cmd_delete_downtime_by_host_name(int cmd, char *args) {
 	char *downtime_comment = NULL;
 	time_t downtime_start_time = 0L;
 	int deleted = 0;
+	char *sep_buffer = NULL;
 
+	if (args == NULL) return ERROR;
+	    
+	sep_buffer = (char *)strdup(args);
+	
 	/* get the host name of the downtime to delete */
-	temp_ptr = my_strtok(args, ";");
-	if(temp_ptr == NULL)
+	if((hostname = my_strsep(&sep_buffer, ";")) == NULL) {
+		free(sep_buffer);
 		return ERROR;
-	hostname = temp_ptr;
+		}
 
 	/* get the optional service name */
-	temp_ptr = my_strtok(NULL, ";");
-	if(temp_ptr != NULL) {
+	if((temp_ptr = my_strsep(&sep_buffer, ";")) != NULL) {
 		if(*temp_ptr != '\0')
 			service_description = temp_ptr;
 
 		/* get the optional start time */
-		temp_ptr = my_strtok(NULL, ";");
-		if(temp_ptr != NULL) {
+		if((temp_ptr = my_strsep(&sep_buffer, ";")) != NULL) {
 			downtime_start_time = strtoul(temp_ptr, &end_ptr, 10);
 
 			/* get the optional comment */
-			temp_ptr = my_strtok(NULL, ";");
+			temp_ptr = my_strsep(&sep_buffer, ";");
 			if(temp_ptr != NULL) {
 				if(*temp_ptr != '\0')
 					downtime_comment = temp_ptr;
-
 				}
 			}
 		}
 
 	deleted = delete_downtime_by_hostname_service_description_start_time_comment(hostname, service_description, downtime_start_time, downtime_comment);
 
+	my_free(sep_buffer);
+	
 	if(deleted == 0)
 		return ERROR;
 
@@ -2497,60 +2626,58 @@ int cmd_delete_downtime_by_hostgroup_name(int cmd, char *args) {
 	char *host_name = NULL;
 	time_t downtime_start_time = 0L;
 	int deleted = 0;
+	char* sep_buffer = NULL;
 
+	if (args == NULL) return ERROR;
+	    
+	sep_buffer = (char *)strdup(args);
+		
 	/* get the host group name of the downtime to delete */
-	temp_ptr = my_strtok(args, ";");
-	if(temp_ptr == NULL)
+	if((temp_ptr = my_strsep(&sep_buffer, ";"))==NULL ||
+	   (temp_hostgroup = find_hostgroup(temp_ptr))==NULL) {
+		my_free(sep_buffer);
 		return ERROR;
-
-	temp_hostgroup = find_hostgroup(temp_ptr);
-	if(temp_hostgroup == NULL)
-		return ERROR;
-
+		}
+		
 	/* get the optional host name */
-	temp_ptr = my_strtok(NULL, ";");
+	temp_ptr = my_strsep(&sep_buffer, ";");
 	if(temp_ptr != NULL) {
-		if(*temp_ptr != '\0')
+		if(strlen(temp_ptr)>0)
 			host_name = temp_ptr;
 
 		/* get the optional service name */
-		temp_ptr = my_strtok(NULL, ";");
+		temp_ptr = my_strsep(&sep_buffer, ";");
 		if(temp_ptr != NULL) {
-			if(*temp_ptr != '\0')
+			if(strlen(temp_ptr)>0)
 				service_description = temp_ptr;
 
 			/* get the optional start time */
-			temp_ptr = my_strtok(NULL, ";");
+			temp_ptr = my_strsep(&sep_buffer, ";");
 			if(temp_ptr != NULL) {
 				downtime_start_time = strtoul(temp_ptr, &end_ptr, 10);
 
 				/* get the optional comment */
-				temp_ptr = my_strtok(NULL, ";");
-				if(temp_ptr != NULL) {
-					if(*temp_ptr != '\0')
-						downtime_comment = temp_ptr;
-
-					}
+				temp_ptr = my_strsep(&sep_buffer, ";");
+				if(temp_ptr != NULL && strlen(temp_ptr)>0)
+					downtime_comment = temp_ptr;
 				}
 			}
-
+				
 		/* get the optional service name */
-		temp_ptr = my_strtok(NULL, ";");
+		temp_ptr = my_strsep(&sep_buffer, ";");
 		if(temp_ptr != NULL) {
-			if(*temp_ptr != '\0')
+			if(strlen(temp_ptr)>0)
 				service_description = temp_ptr;
 
 			/* get the optional start time */
-			temp_ptr = my_strtok(NULL, ";");
+			temp_ptr = my_strsep(&sep_buffer, ";");
 			if(temp_ptr != NULL) {
 				downtime_start_time = strtoul(temp_ptr, &end_ptr, 10);
 
 				/* get the optional comment */
-				temp_ptr = my_strtok(NULL, ";");
-				if(temp_ptr != NULL) {
-					if(*temp_ptr != '\0')
-						downtime_comment = temp_ptr;
-					}
+				temp_ptr = my_strsep(&sep_buffer, ";");
+				if(temp_ptr != NULL && strlen(temp_ptr)>0)
+					downtime_comment = temp_ptr;
 				}
 			}
 		}
@@ -2562,7 +2689,9 @@ int cmd_delete_downtime_by_hostgroup_name(int cmd, char *args) {
 			continue;
 		deleted = +delete_downtime_by_hostname_service_description_start_time_comment(temp_host->name, service_description, downtime_start_time, downtime_comment);
 		}
-
+	
+	my_free(sep_buffer);
+		
 	if(deleted == 0)
 		return ERROR;
 
@@ -2576,32 +2705,33 @@ int cmd_delete_downtime_by_start_time_comment(int cmd, char *args) {
 	char *temp_ptr = NULL;
 	char *end_ptr = NULL;
 	int deleted = 0;
+	char *sep_buffer = NULL;
+
+	if (args == NULL) return ERROR;
+	    
+	sep_buffer = (char *)strdup(args);
 
 	/* Get start time if set */
-	temp_ptr = my_strtok(args, ";");
-	if(temp_ptr != NULL) {
+	if((temp_ptr = my_strsep(&sep_buffer, ";")) != NULL) {
 		/* This will be set to 0 if no start_time is entered or data is bad */
 		downtime_start_time = strtoul(temp_ptr, &end_ptr, 10);
 		}
 
 	/* Get comment - not sure if this should be also tokenised by ; */
-	temp_ptr = my_strtok(NULL, "\n");
-	if(temp_ptr != NULL && *temp_ptr != '\0') {
-		downtime_comment = temp_ptr;
-		}
+	downtime_comment = my_strsep(&sep_buffer, "\n");
 
 	/* No args should give an error */
-	if(downtime_start_time == 0 && downtime_comment == NULL)
-		return ERROR;
+	if(downtime_start_time != 0 || downtime_comment != NULL) {
+		deleted = delete_downtime_by_hostname_service_description_start_time_comment(NULL, NULL, downtime_start_time, downtime_comment);
+		}
 
-	deleted = delete_downtime_by_hostname_service_description_start_time_comment(NULL, NULL, downtime_start_time, downtime_comment);
-
+	my_free(sep_buffer);
+		
 	if(deleted == 0)
 		return ERROR;
 
 	return OK;
 	}
-
 
 /* changes a host or service (integer) variable */
 int cmd_change_object_int_var(int cmd, char *args) {
@@ -2620,7 +2750,13 @@ int cmd_change_object_int_var(int cmd, char *args) {
 	unsigned long attr = MODATTR_NONE;
 	unsigned long hattr = MODATTR_NONE;
 	unsigned long sattr = MODATTR_NONE;
-
+	char *sep_buffer = NULL;
+	int result = OK;
+	
+	if (args == NULL) return ERROR;
+	    
+	sep_buffer = (char *)strdup(args);
+	
 	switch(cmd) {
 
 		case CMD_CHANGE_NORMAL_SVC_CHECK_INTERVAL:
@@ -2629,16 +2765,16 @@ int cmd_change_object_int_var(int cmd, char *args) {
 		case CMD_CHANGE_SVC_MODATTR:
 
 			/* get the host name */
-			if((host_name = my_strtok(args, ";")) == NULL)
-				return ERROR;
+			if((host_name = my_strsep(&sep_buffer, ";")) == NULL)
+				result = ERROR;
 
 			/* get the service name */
-			if((svc_description = my_strtok(NULL, ";")) == NULL)
-				return ERROR;
+			if((svc_description = my_strsep(&sep_buffer, ";")) == NULL)
+				result = ERROR;
 
 			/* verify that the service is valid */
-			if((temp_service = find_service(host_name, svc_description)) == NULL)
-				return ERROR;
+			if(result != ERROR && (temp_service = find_service(host_name, svc_description)) == NULL)
+				result = ERROR;
 
 			break;
 
@@ -2648,12 +2784,12 @@ int cmd_change_object_int_var(int cmd, char *args) {
 		case CMD_CHANGE_HOST_MODATTR:
 
 			/* get the host name */
-			if((host_name = my_strtok(args, ";")) == NULL)
-				return ERROR;
+			if((host_name = my_strsep(&sep_buffer, ";")) == NULL)
+				result = ERROR;
 
 			/* verify that the host is valid */
-			if((temp_host = find_host(host_name)) == NULL)
-				return ERROR;
+			if(result != ERROR && (temp_host = find_host(host_name)) == NULL)
+				result = ERROR;
 			break;
 
 		case CMD_CHANGE_CONTACT_MODATTR:
@@ -2661,28 +2797,36 @@ int cmd_change_object_int_var(int cmd, char *args) {
 		case CMD_CHANGE_CONTACT_MODSATTR:
 
 			/* get the contact name */
-			if((contact_name = my_strtok(args, ";")) == NULL)
-				return ERROR;
+			if((contact_name = my_strsep(&sep_buffer, ";")) == NULL)
+				result = ERROR;
 
 			/* verify that the contact is valid */
-			if((temp_contact = find_contact(contact_name)) == NULL)
-				return ERROR;
+			if(result != ERROR && (temp_contact = find_contact(contact_name)) == NULL)
+				result = ERROR;
 			break;
 
 		default:
 			/* unknown command */
-			return ERROR;
+			result = ERROR;
 			break;
 		}
 
 	/* get the value */
-	if((temp_ptr = my_strtok(NULL, ";")) == NULL)
-		return ERROR;
-	intval = (int)strtol(temp_ptr, NULL, 0);
-	if(intval < 0 || (intval == 0 && errno == EINVAL))
-		return ERROR;
-	dval = (int)strtod(temp_ptr, NULL);
+	if((temp_ptr = my_strsep(&sep_buffer, ";")) == NULL)
+		result = ERROR;
+	else {
+		intval = (int)strtol(temp_ptr, NULL, 0);
+		if(intval < 0 || (intval == 0 && errno == EINVAL))
+		      result = ERROR;
+		else
+		      dval = (int)strtod(temp_ptr, NULL);
+		}
 
+	my_free(sep_buffer);
+
+	if (result != OK)
+	      return result;
+		
 	switch(cmd) {
 
 		case CMD_CHANGE_NORMAL_HOST_CHECK_INTERVAL:
@@ -2805,7 +2949,6 @@ int cmd_change_object_int_var(int cmd, char *args) {
 			break;
 		}
 
-
 	/* send data to event broker and update status file */
 	switch(cmd) {
 
@@ -2885,8 +3028,6 @@ int cmd_change_object_int_var(int cmd, char *args) {
 	return OK;
 	}
 
-
-
 /* changes a host or service (char) variable */
 int cmd_change_object_char_var(int cmd, char *args) {
 	service *temp_service = NULL;
@@ -2899,11 +3040,11 @@ int cmd_change_object_char_var(int cmd, char *args) {
 	char *contact_name = NULL;
 	char *charval = NULL;
 	char *temp_ptr = NULL;
-	char *temp_ptr2 = NULL;
 	unsigned long attr = MODATTR_NONE;
 	unsigned long hattr = MODATTR_NONE;
 	unsigned long sattr = MODATTR_NONE;
-
+	char *sep_buffer = NULL;
+	int result = OK;
 
 	/* SECURITY PATCH - disable these for the time being */
 	switch(cmd) {
@@ -2916,86 +3057,78 @@ int cmd_change_object_char_var(int cmd, char *args) {
 			return ERROR;
 		}
 
+	if (args == NULL) return ERROR;
+	    
+	sep_buffer = (char *)strdup(args);
 
 	/* get the command arguments */
 	switch(cmd) {
 
 		case CMD_CHANGE_GLOBAL_HOST_EVENT_HANDLER:
 		case CMD_CHANGE_GLOBAL_SVC_EVENT_HANDLER:
-
-			if((charval = my_strtok(args, "\n")) == NULL)
-				return ERROR;
-
+			if((charval = my_strsep(&sep_buffer, "\n")) == NULL)
+				result = ERROR;
 			break;
 
 		case CMD_CHANGE_HOST_EVENT_HANDLER:
 		case CMD_CHANGE_HOST_CHECK_COMMAND:
 		case CMD_CHANGE_HOST_CHECK_TIMEPERIOD:
 		case CMD_CHANGE_HOST_NOTIFICATION_TIMEPERIOD:
-
 			/* get the host name */
-			if((host_name = my_strtok(args, ";")) == NULL)
-				return ERROR;
-
+			if((host_name = my_strsep(&sep_buffer, ";")) == NULL)
+				result = ERROR;
 			/* verify that the host is valid */
-			if((temp_host = find_host(host_name)) == NULL)
-				return ERROR;
-
-			if((charval = my_strtok(NULL, "\n")) == NULL)
-				return ERROR;
-
+			if(result != ERROR && (temp_host = find_host(host_name)) == NULL)
+				result = ERROR;
+			if(result != ERROR && (charval = my_strsep(&sep_buffer, "\n")) == NULL)
+				result = ERROR;
 			break;
 
 		case CMD_CHANGE_SVC_EVENT_HANDLER:
 		case CMD_CHANGE_SVC_CHECK_COMMAND:
 		case CMD_CHANGE_SVC_CHECK_TIMEPERIOD:
 		case CMD_CHANGE_SVC_NOTIFICATION_TIMEPERIOD:
-
 			/* get the host name */
-			if((host_name = my_strtok(args, ";")) == NULL)
-				return ERROR;
-
+			if((host_name = my_strsep(&sep_buffer, ";")) == NULL)
+				result = ERROR;
 			/* get the service name */
-			if((svc_description = my_strtok(NULL, ";")) == NULL)
-				return ERROR;
-
+			if((svc_description = my_strsep(&sep_buffer, ";")) == NULL)
+				result = ERROR;
 			/* verify that the service is valid */
-			if((temp_service = find_service(host_name, svc_description)) == NULL)
-				return ERROR;
-
-			if((charval = my_strtok(NULL, "\n")) == NULL)
-				return ERROR;
-
+			if(result != ERROR && (temp_service = find_service(host_name, svc_description)) == NULL)
+				result = ERROR;
+			if(result != ERROR && (charval = my_strsep(&sep_buffer, "\n")) == NULL)
+				result = ERROR;
 			break;
 
 
 		case CMD_CHANGE_CONTACT_HOST_NOTIFICATION_TIMEPERIOD:
 		case CMD_CHANGE_CONTACT_SVC_NOTIFICATION_TIMEPERIOD:
-
 			/* get the contact name */
-			if((contact_name = my_strtok(args, ";")) == NULL)
-				return ERROR;
-
+			if((contact_name = my_strsep(&sep_buffer, ";")) == NULL)
+				result = ERROR;
 			/* verify that the contact is valid */
-			if((temp_contact = find_contact(contact_name)) == NULL)
-				return ERROR;
-
-			if((charval = my_strtok(NULL, "\n")) == NULL)
-				return ERROR;
-
+			if(result != ERROR && (temp_contact = find_contact(contact_name)) == NULL)
+				result = ERROR;
+			if(result != ERROR && (charval = my_strsep(&sep_buffer, "\n")) == NULL)
+				result = ERROR;
 			break;
 
 		default:
 			/* invalid command */
-			return ERROR;
+			result = ERROR;
 			break;
 
 		}
+		
+	my_free(sep_buffer);
 
-	if((temp_ptr = (char *)strdup(charval)) == NULL)
+	if (result != OK)
+		return result;
+
+	if((sep_buffer = (char *)strdup(charval)) == NULL)
 		return ERROR;
-
-
+	
 	/* do some validation */
 	switch(cmd) {
 
@@ -3005,13 +3138,9 @@ int cmd_change_object_char_var(int cmd, char *args) {
 		case CMD_CHANGE_SVC_NOTIFICATION_TIMEPERIOD:
 		case CMD_CHANGE_CONTACT_HOST_NOTIFICATION_TIMEPERIOD:
 		case CMD_CHANGE_CONTACT_SVC_NOTIFICATION_TIMEPERIOD:
-
 			/* make sure the timeperiod is valid */
-			if((temp_timeperiod = find_timeperiod(temp_ptr)) == NULL) {
-				my_free(temp_ptr);
-				return ERROR;
-				}
-
+			if((temp_timeperiod = find_timeperiod(sep_buffer)) == NULL)
+				result = ERROR;
 			break;
 
 		case CMD_CHANGE_GLOBAL_HOST_EVENT_HANDLER:
@@ -3020,30 +3149,33 @@ int cmd_change_object_char_var(int cmd, char *args) {
 		case CMD_CHANGE_SVC_EVENT_HANDLER:
 		case CMD_CHANGE_HOST_CHECK_COMMAND:
 		case CMD_CHANGE_SVC_CHECK_COMMAND:
-
 			/* make sure the command exists */
-			temp_ptr2 = my_strtok(temp_ptr, "!");
-			if((temp_command = find_command(temp_ptr2)) == NULL) {
-				my_free(temp_ptr);
-				return ERROR;
-				}
-
-			my_free(temp_ptr);
-			if((temp_ptr = (char *)strdup(charval)) == NULL)
-				return ERROR;
-
+			temp_ptr = my_strsep(&sep_buffer, "!");
+			if((temp_command = find_command(temp_ptr)) == NULL)
+				result = ERROR;
 			break;
 
 		default:
 			break;
 		}
-
+		
+	if (result != OK) {
+		my_free(sep_buffer);
+		return result;
+		}
+	else {
+		/* temp_ptr will use data previously used in sep_buffer. cleaner
+		 * code would be to free sep_buffer and then do strdup to get
+		 * a copy into temp_ptr, but why bother if memory already allocated */
+		strcpy(sep_buffer,charval);
+		temp_ptr = sep_buffer;
+		sep_buffer = NULL;
+		}
 
 	/* update the variable */
 	switch(cmd) {
 
 		case CMD_CHANGE_GLOBAL_HOST_EVENT_HANDLER:
-
 			my_free(global_host_event_handler);
 			global_host_event_handler = temp_ptr;
 			global_host_event_handler_ptr = temp_command;
@@ -3051,7 +3183,6 @@ int cmd_change_object_char_var(int cmd, char *args) {
 			break;
 
 		case CMD_CHANGE_GLOBAL_SVC_EVENT_HANDLER:
-
 			my_free(global_service_event_handler);
 			global_service_event_handler = temp_ptr;
 			global_service_event_handler_ptr = temp_command;
@@ -3059,7 +3190,6 @@ int cmd_change_object_char_var(int cmd, char *args) {
 			break;
 
 		case CMD_CHANGE_HOST_EVENT_HANDLER:
-
 			my_free(temp_host->event_handler);
 			temp_host->event_handler = temp_ptr;
 			temp_host->event_handler_ptr = temp_command;
@@ -3067,7 +3197,6 @@ int cmd_change_object_char_var(int cmd, char *args) {
 			break;
 
 		case CMD_CHANGE_HOST_CHECK_COMMAND:
-
 			my_free(temp_host->host_check_command);
 			temp_host->host_check_command = temp_ptr;
 			temp_host->check_command_ptr = temp_command;
@@ -3075,7 +3204,6 @@ int cmd_change_object_char_var(int cmd, char *args) {
 			break;
 
 		case CMD_CHANGE_HOST_CHECK_TIMEPERIOD:
-
 			my_free(temp_host->check_period);
 			temp_host->check_period = temp_ptr;
 			temp_host->check_period_ptr = temp_timeperiod;
@@ -3083,7 +3211,6 @@ int cmd_change_object_char_var(int cmd, char *args) {
 			break;
 
 		case CMD_CHANGE_HOST_NOTIFICATION_TIMEPERIOD:
-
 			my_free(temp_host->notification_period);
 			temp_host->notification_period = temp_ptr;
 			temp_host->notification_period_ptr = temp_timeperiod;
@@ -3091,7 +3218,6 @@ int cmd_change_object_char_var(int cmd, char *args) {
 			break;
 
 		case CMD_CHANGE_SVC_EVENT_HANDLER:
-
 			my_free(temp_service->event_handler);
 			temp_service->event_handler = temp_ptr;
 			temp_service->event_handler_ptr = temp_command;
@@ -3099,7 +3225,6 @@ int cmd_change_object_char_var(int cmd, char *args) {
 			break;
 
 		case CMD_CHANGE_SVC_CHECK_COMMAND:
-
 			my_free(temp_service->service_check_command);
 			temp_service->service_check_command = temp_ptr;
 			temp_service->check_command_ptr = temp_command;
@@ -3107,7 +3232,6 @@ int cmd_change_object_char_var(int cmd, char *args) {
 			break;
 
 		case CMD_CHANGE_SVC_CHECK_TIMEPERIOD:
-
 			my_free(temp_service->check_period);
 			temp_service->check_period = temp_ptr;
 			temp_service->check_period_ptr = temp_timeperiod;
@@ -3115,7 +3239,6 @@ int cmd_change_object_char_var(int cmd, char *args) {
 			break;
 
 		case CMD_CHANGE_SVC_NOTIFICATION_TIMEPERIOD:
-
 			my_free(temp_service->notification_period);
 			temp_service->notification_period = temp_ptr;
 			temp_service->notification_period_ptr = temp_timeperiod;
@@ -3123,7 +3246,6 @@ int cmd_change_object_char_var(int cmd, char *args) {
 			break;
 
 		case CMD_CHANGE_CONTACT_HOST_NOTIFICATION_TIMEPERIOD:
-
 			my_free(temp_contact->host_notification_period);
 			temp_contact->host_notification_period = temp_ptr;
 			temp_contact->host_notification_period_ptr = temp_timeperiod;
@@ -3131,7 +3253,6 @@ int cmd_change_object_char_var(int cmd, char *args) {
 			break;
 
 		case CMD_CHANGE_CONTACT_SVC_NOTIFICATION_TIMEPERIOD:
-
 			my_free(temp_contact->service_notification_period);
 			temp_contact->service_notification_period = temp_ptr;
 			temp_contact->service_notification_period_ptr = temp_timeperiod;
@@ -3142,87 +3263,68 @@ int cmd_change_object_char_var(int cmd, char *args) {
 			break;
 		}
 
-
 	/* send data to event broker and update status file */
 	switch(cmd) {
 
 		case CMD_CHANGE_GLOBAL_HOST_EVENT_HANDLER:
-
 			/* set the modified host attribute */
 			modified_host_process_attributes |= attr;
-
 #ifdef USE_EVENT_BROKER
 			/* send data to event broker */
 			broker_adaptive_program_data(NEBTYPE_ADAPTIVEPROGRAM_UPDATE, NEBFLAG_NONE, NEBATTR_NONE, cmd, attr, modified_host_process_attributes, MODATTR_NONE, modified_service_process_attributes, NULL);
 #endif
-
 			/* update program status */
 			update_program_status(FALSE);
-
 			break;
 
 		case CMD_CHANGE_GLOBAL_SVC_EVENT_HANDLER:
-
 			/* set the modified service attribute */
 			modified_service_process_attributes |= attr;
-
 #ifdef USE_EVENT_BROKER
 			/* send data to event broker */
 			broker_adaptive_program_data(NEBTYPE_ADAPTIVEPROGRAM_UPDATE, NEBFLAG_NONE, NEBATTR_NONE, cmd, MODATTR_NONE, modified_host_process_attributes, attr, modified_service_process_attributes, NULL);
 #endif
-
 			/* update program status */
 			update_program_status(FALSE);
-
 			break;
 
 		case CMD_CHANGE_SVC_EVENT_HANDLER:
 		case CMD_CHANGE_SVC_CHECK_COMMAND:
 		case CMD_CHANGE_SVC_CHECK_TIMEPERIOD:
 		case CMD_CHANGE_SVC_NOTIFICATION_TIMEPERIOD:
-
 			/* set the modified service attribute */
 			temp_service->modified_attributes |= attr;
-
 #ifdef USE_EVENT_BROKER
 			/* send data to event broker */
 			broker_adaptive_service_data(NEBTYPE_ADAPTIVESERVICE_UPDATE, NEBFLAG_NONE, NEBATTR_NONE, temp_service, cmd, attr, temp_service->modified_attributes, NULL);
 #endif
-
 			/* update the status log with the service info */
 			update_service_status(temp_service, FALSE);
-
 			break;
 
 		case CMD_CHANGE_HOST_EVENT_HANDLER:
 		case CMD_CHANGE_HOST_CHECK_COMMAND:
 		case CMD_CHANGE_HOST_CHECK_TIMEPERIOD:
 		case CMD_CHANGE_HOST_NOTIFICATION_TIMEPERIOD:
-
 			/* set the modified host attribute */
 			temp_host->modified_attributes |= attr;
-
 #ifdef USE_EVENT_BROKER
 			/* send data to event broker */
 			broker_adaptive_host_data(NEBTYPE_ADAPTIVEHOST_UPDATE, NEBFLAG_NONE, NEBATTR_NONE, temp_host, cmd, attr, temp_host->modified_attributes, NULL);
 #endif
-
 			/* update the status log with the host info */
 			update_host_status(temp_host, FALSE);
 			break;
 
 		case CMD_CHANGE_CONTACT_HOST_NOTIFICATION_TIMEPERIOD:
 		case CMD_CHANGE_CONTACT_SVC_NOTIFICATION_TIMEPERIOD:
-
 			/* set the modified attributes */
 			temp_contact->modified_host_attributes |= hattr;
 			temp_contact->modified_service_attributes |= sattr;
-
 #ifdef USE_EVENT_BROKER
 			/* send data to event broker */
 			broker_adaptive_contact_data(NEBTYPE_ADAPTIVECONTACT_UPDATE, NEBFLAG_NONE, NEBATTR_NONE, temp_contact, cmd, attr, temp_contact->modified_attributes, hattr, temp_contact->modified_host_attributes, sattr, temp_contact->modified_service_attributes, NULL);
 #endif
-
 			/* update the status log with the contact info */
 			update_contact_status(temp_contact, FALSE);
 			break;
@@ -3233,8 +3335,6 @@ int cmd_change_object_char_var(int cmd, char *args) {
 
 	return OK;
 	}
-
-
 
 /* changes a custom host or service variable */
 int cmd_change_object_custom_var(int cmd, char *args) {
@@ -3248,153 +3348,158 @@ int cmd_change_object_custom_var(int cmd, char *args) {
 	char *varname = NULL;
 	char *varvalue = NULL;
 	register int x = 0;
+	char *sep_buffer = NULL;
+	int result = OK;
+
+	if (args == NULL) return ERROR;
+	    
+	sep_buffer = (char *)strdup(args);
 
 	/* get the host or contact name */
-	if((temp_ptr = my_strtok(args, ";")) == NULL)
-		return ERROR;
-	if((name1 = (char *)strdup(temp_ptr)) == NULL)
-		return ERROR;
+	if((temp_ptr = my_strsep(&sep_buffer, ";")) == NULL ||
+	   (name1 = (char *)strdup(temp_ptr)) == NULL)
+		result = ERROR;
 
 	/* get the service description if necessary */
-	if(cmd == CMD_CHANGE_CUSTOM_SVC_VAR) {
-		if((temp_ptr = my_strtok(NULL, ";")) == NULL) {
-			my_free(name1);
-			return ERROR;
-			}
-		if((name2 = (char *)strdup(temp_ptr)) == NULL) {
-			my_free(name1);
-			return ERROR;
-			}
+	if(result != ERROR && cmd == CMD_CHANGE_CUSTOM_SVC_VAR) {
+		if((temp_ptr = my_strsep(&sep_buffer, ";")) == NULL ||
+		   (name2 = (char *)strdup(temp_ptr)) == NULL)
+			result = ERROR;
 		}
 
 	/* get the custom variable name */
-	if((temp_ptr = my_strtok(NULL, ";")) == NULL) {
-		my_free(name1);
-		my_free(name2);
-		return ERROR;
-		}
-	if((varname = (char *)strdup(temp_ptr)) == NULL) {
-		my_free(name1);
-		my_free(name2);
-		return ERROR;
-		}
+	if((temp_ptr = my_strsep(&sep_buffer, ";")) == NULL ||
+	   (varname = (char *)strdup(temp_ptr)) == NULL)
+		result = ERROR;
 
 	/* get the custom variable value */
-	if((temp_ptr = my_strtok(NULL, ";")) == NULL) {
-		my_free(name1);
-		my_free(name2);
-		my_free(varname);
-		return ERROR;
-		}
-	if((varvalue = (char *)strdup(temp_ptr)) == NULL) {
-		my_free(name1);
-		my_free(name2);
-		my_free(varname);
-		return ERROR;
-		}
+	if((temp_ptr = my_strsep(&sep_buffer, ";")) == NULL ||
+	   (varvalue = (char *)strdup(temp_ptr)) == NULL)
+		result = ERROR;
 
-	/* find the object */
-	switch(cmd) {
-		case CMD_CHANGE_CUSTOM_HOST_VAR:
-			if((temp_host = find_host(name1)) == NULL)
-				return ERROR;
-			temp_customvariablesmember = temp_host->custom_variables;
-			break;
-		case CMD_CHANGE_CUSTOM_SVC_VAR:
-			if((temp_service = find_service(name1, name2)) == NULL)
-				return ERROR;
-			temp_customvariablesmember = temp_service->custom_variables;
-			break;
-		case CMD_CHANGE_CUSTOM_CONTACT_VAR:
-			if((temp_contact = find_contact(name1)) == NULL)
-				return ERROR;
-			temp_customvariablesmember = temp_contact->custom_variables;
-			break;
-		default:
-			break;
+	if (result != ERROR) {
+		/* find the object */
+		switch(cmd) {
+			case CMD_CHANGE_CUSTOM_HOST_VAR:
+				if((temp_host = find_host(name1)) == NULL)
+				      result = ERROR;
+				else 
+				      temp_customvariablesmember = temp_host->custom_variables;
+				break;
+			case CMD_CHANGE_CUSTOM_SVC_VAR:
+				if((temp_service = find_service(name1, name2)) == NULL)
+				      result = ERROR;
+				else 
+				      temp_customvariablesmember = temp_service->custom_variables;
+				break;
+			case CMD_CHANGE_CUSTOM_CONTACT_VAR:
+				if((temp_contact = find_contact(name1)) == NULL)
+				      result= ERROR;
+				else
+				      temp_customvariablesmember = temp_contact->custom_variables;
+				break;
+			default:
+			      break;
+			}
 		}
 
-	/* capitalize the custom variable name */
-	for(x = 0; varname[x] != '\x0'; x++)
-		varname[x] = toupper(varname[x]);
+	if (result != ERROR) {
+	  
+		/* capitalize the custom variable name */
+		for(x = 0; varname[x] != '\x0'; x++)
+			varname[x] = toupper(varname[x]);
 
-	/* find the proper variable */
-	for(; temp_customvariablesmember != NULL; temp_customvariablesmember = temp_customvariablesmember->next) {
+		/* find the proper variable */
+		for(; temp_customvariablesmember != NULL; temp_customvariablesmember = temp_customvariablesmember->next) {
 
-		/* we found the variable, so update the value */
-		if(!strcmp(varname, temp_customvariablesmember->variable_name)) {
+			/* we found the variable, so update the value */
+			if(!strcmp(varname, temp_customvariablesmember->variable_name)) {
 
-			/* update the value */
-			if(temp_customvariablesmember->variable_value)
-				my_free(temp_customvariablesmember->variable_value);
-			temp_customvariablesmember->variable_value = (char *)strdup(varvalue);
+				/* update the value */
+				if(temp_customvariablesmember->variable_value)
+					my_free(temp_customvariablesmember->variable_value);
+				temp_customvariablesmember->variable_value = (char *)strdup(varvalue);
 
-			/* mark the variable value as having been changed */
-			temp_customvariablesmember->has_been_modified = TRUE;
+				/* mark the variable value as having been changed */
+				temp_customvariablesmember->has_been_modified = TRUE;
 
-			break;
+				break;
+				}
 			}
 		}
 
 	/* free memory */
-	my_free(name1);
-	my_free(name2);
-	my_free(varname);
-	my_free(varvalue);
+	if (name1 != NULL)
+		my_free(name1);
+	if (name2 != NULL)
+		my_free(name2);
+	if (varname != NULL)
+		my_free(varname);
+	if (varvalue != NULL)
+		my_free(varvalue);
+	my_free(sep_buffer);
 
-	/* set the modified attributes and update the status of the object */
-	switch(cmd) {
-		case CMD_CHANGE_CUSTOM_HOST_VAR:
-			temp_host->modified_attributes |= MODATTR_CUSTOM_VARIABLE;
-			update_host_status(temp_host, FALSE);
-			break;
-		case CMD_CHANGE_CUSTOM_SVC_VAR:
-			temp_service->modified_attributes |= MODATTR_CUSTOM_VARIABLE;
-			update_service_status(temp_service, FALSE);
-			break;
-		case CMD_CHANGE_CUSTOM_CONTACT_VAR:
-			temp_contact->modified_attributes |= MODATTR_CUSTOM_VARIABLE;
-			update_contact_status(temp_contact, FALSE);
-			break;
-		default:
-			break;
+	if (result != ERROR) {
+		/* set the modified attributes and update the status of the object */
+		switch(cmd) {
+			case CMD_CHANGE_CUSTOM_HOST_VAR:
+				temp_host->modified_attributes |= MODATTR_CUSTOM_VARIABLE;
+				update_host_status(temp_host, FALSE);
+				break;
+			case CMD_CHANGE_CUSTOM_SVC_VAR:
+				temp_service->modified_attributes |= MODATTR_CUSTOM_VARIABLE;
+				update_service_status(temp_service, FALSE);
+				break;
+			case CMD_CHANGE_CUSTOM_CONTACT_VAR:
+				temp_contact->modified_attributes |= MODATTR_CUSTOM_VARIABLE;
+				update_contact_status(temp_contact, FALSE);
+				break;
+			default:
+				break;
+			}
 		}
 
-	return OK;
+	return result;
 	}
-
 
 /* processes an external host command */
 int cmd_process_external_commands_from_file(int cmd, char *args) {
 	char *fname = NULL;
 	char *temp_ptr = NULL;
 	int delete_file = FALSE;
+	char *sep_buffer = NULL;
+	int result = OK;
+
+	if (args == NULL) return ERROR;
+	    
+	sep_buffer = (char *)strdup(args);
 
 	/* get the file name */
-	if((temp_ptr = my_strtok(args, ";")) == NULL)
-		return ERROR;
-	if((fname = (char *)strdup(temp_ptr)) == NULL)
-		return ERROR;
-
+	if((temp_ptr = my_strsep(&sep_buffer, ";")) == NULL ||
+	   (fname = (char *)strdup(temp_ptr)) == NULL)
+		result = ERROR;
+		
 	/* find the deletion option */
-	if((temp_ptr = my_strtok(NULL, "\n")) == NULL) {
-		my_free(fname);
-		return ERROR;
+	if(result != ERROR && (temp_ptr = my_strsep(&sep_buffer, "\n")) == NULL)
+		result = ERROR;
+
+	if (result != ERROR) {	
+		if(atoi(temp_ptr) == 0)
+		      delete_file = FALSE;
+		else
+		      delete_file = TRUE;
+
+		/* process the file */
+		process_external_commands_from_file(fname, delete_file);
 		}
-	if(atoi(temp_ptr) == 0)
-		delete_file = FALSE;
-	else
-		delete_file = TRUE;
-
-	/* process the file */
-	process_external_commands_from_file(fname, delete_file);
-
+		
 	/* free memory */
-	my_free(fname);
+	if (fname != NULL)
+		my_free(fname);
+	my_free(sep_buffer);
 
-	return OK;
+	return result;
 	}
-
 
 /******************************************************************/
 /*************** INTERNAL COMMAND IMPLEMENTATIONS  ****************/

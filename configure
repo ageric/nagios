@@ -5547,6 +5547,10 @@ _ACEOF
 
 fi
 
+if test "${GCC}" = "yes"
+then
+    CFLAGS="${CFLAGS} -Wstrict-prototypes -Wno-unused-result"
+fi
 
 nagios_name=nagios
 nagiostats_name=nagiostats

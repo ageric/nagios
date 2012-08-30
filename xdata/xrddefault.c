@@ -2,7 +2,6 @@
  *
  * XRDDEFAULT.C - Default external state retention routines for Nagios
  *
- *
  * License:
  *
  * This program is free software; you can redistribute it and/or modify
@@ -370,6 +369,7 @@ int xrddefault_save_state_information(void) {
 		fprintf(fp, "plugin_output=%s\n", (temp_host->plugin_output == NULL) ? "" : temp_host->plugin_output);
 		fprintf(fp, "long_plugin_output=%s\n", (temp_host->long_plugin_output == NULL) ? "" : temp_host->long_plugin_output);
 		fprintf(fp, "performance_data=%s\n", (temp_host->perf_data == NULL) ? "" : temp_host->perf_data);
+		fprintf(fp, "saved_data=%s\n", (temp_host->saved_data == NULL) ? "" : temp_host->saved_data);
 		fprintf(fp, "last_check=%lu\n", temp_host->last_check);
 		fprintf(fp, "next_check=%lu\n", temp_host->next_check);
 		fprintf(fp, "check_options=%d\n", temp_host->check_options);
@@ -452,6 +452,7 @@ int xrddefault_save_state_information(void) {
 		fprintf(fp, "plugin_output=%s\n", (temp_service->plugin_output == NULL) ? "" : temp_service->plugin_output);
 		fprintf(fp, "long_plugin_output=%s\n", (temp_service->long_plugin_output == NULL) ? "" : temp_service->long_plugin_output);
 		fprintf(fp, "performance_data=%s\n", (temp_service->perf_data == NULL) ? "" : temp_service->perf_data);
+		fprintf(fp, "saved_data=%s\n", (temp_service->saved_data == NULL) ? "" : temp_service->saved_data);
 		fprintf(fp, "last_check=%lu\n", temp_service->last_check);
 		fprintf(fp, "next_check=%lu\n", temp_service->next_check);
 		fprintf(fp, "check_options=%d\n", temp_service->check_options);
@@ -1189,6 +1190,10 @@ int xrddefault_read_state_information(void) {
 								my_free(temp_host->perf_data);
 								temp_host->perf_data = (char *)strdup(val);
 								}
+							else if(!strcmp(var, "saved_data")) {
+								my_free(temp_host->saved_data);
+								temp_host->saved_data = (char *)strdup(val);
+								}
 							else if(!strcmp(var, "last_check"))
 								temp_host->last_check = strtoul(val, NULL, 10);
 							else if(!strcmp(var, "next_check")) {
@@ -1483,6 +1488,10 @@ int xrddefault_read_state_information(void) {
 							else if(!strcmp(var, "performance_data")) {
 								my_free(temp_service->perf_data);
 								temp_service->perf_data = (char *)strdup(val);
+								}
+							else if(!strcmp(var, "saved_data")) {
+								my_free(temp_service->saved_data);
+								temp_service->saved_data = (char *)strdup(val);
 								}
 							else if(!strcmp(var, "last_check"))
 								temp_service->last_check = strtoul(val, NULL, 10);
