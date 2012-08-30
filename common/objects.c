@@ -588,7 +588,6 @@ host *add_host(char *name, char *display_name, char *alias, char *address, char 
 	new_host->total_services = 0;
 	new_host->total_service_check_interval = 0L;
 	new_host->modified_attributes = MODATTR_NONE;
-	new_host->hostgroups_ptr=NULL;
 #endif
 
 	/* add new host to hash table */
@@ -1062,12 +1061,6 @@ contact *add_contact(char *name, char *alias, char *email, char *pager, char **a
 	new_contact->host_notification_period_ptr = htp;
 	new_contact->service_notification_period_ptr = stp;
 #endif
-	new_contact->custom_variables = NULL;
-	new_contact->name = NULL;
-	new_contact->alias = NULL;
-	new_contact->email = NULL;
-	new_contact->pager = NULL;
-
 	if((new_contact->name = (char *)strdup(name)) == NULL)
 		result = ERROR;
 	if((new_contact->alias = (char *)strdup((alias == NULL) ? name : alias)) == NULL)
@@ -1081,7 +1074,6 @@ contact *add_contact(char *name, char *alias, char *email, char *pager, char **a
 			result = ERROR;
 		}
 	if(addresses) {
-		for(x = 0; x < MAX_CONTACT_ADDRESSES; x++) new_contact->address[x] = NULL;
 		for(x = 0; x < MAX_CONTACT_ADDRESSES; x++) {
 			if(addresses[x]) {
 				if((new_contact->address[x] = (char *)strdup(addresses[x])) == NULL)
@@ -1117,8 +1109,6 @@ contact *add_contact(char *name, char *alias, char *email, char *pager, char **a
 	new_contact->service_notification_period_ptr = NULL;
 	new_contact->contactgroups_ptr = NULL;
 #endif
-        new_contact->host_notification_commands = NULL;
-        new_contact->service_notification_commands = NULL;
 
 	/* add new contact to hash table */
 	if(result == OK) {
@@ -1141,27 +1131,18 @@ contact *add_contact(char *name, char *alias, char *email, char *pager, char **a
 	/* handle errors */
 	if(result == ERROR) {
 		for(x = 0; x < MAX_CONTACT_ADDRESSES; x++)
-			if (new_contact->address[x] != NULL)
-				my_free(new_contact->address[x]);
-		if(new_contact->name!=NULL)
-			my_free(new_contact->name);
-		if(new_contact->alias!=NULL)
-			my_free(new_contact->alias);
-		if(new_contact->email!=NULL)
-			my_free(new_contact->email);
-		if(new_contact->pager!=NULL)
-			my_free(new_contact->pager);
+			my_free(new_contact->address[x]);
+		my_free(new_contact->name);
+		my_free(new_contact->alias);
+		my_free(new_contact->email);
+		my_free(new_contact->pager);
 		my_free(new_contact);
 		return NULL;
 		}
 
-	new_contact->id = num_objects.contacts;
-	new_contact->next = NULL;
-	if(new_contact->id>0)
+	new_contact->id = num_objects.contacts++;
+	if(new_contact->id)
 		contact_list[new_contact->id - 1].next = new_contact;
-
-	num_objects.contacts++;
-
 	return new_contact;
 	}
 
@@ -1170,6 +1151,7 @@ contact *add_contact(char *name, char *alias, char *email, char *pager, char **a
 /* adds a host notification command to a contact definition */
 commandsmember *add_host_notification_command_to_contact(contact *cntct, char *command_name) {
 	commandsmember *new_commandsmember = NULL;
+	int result = OK;
 
 	/* make sure we have the data we need */
 	if(cntct == NULL || (command_name == NULL || !strcmp(command_name, ""))) {
@@ -1182,7 +1164,12 @@ commandsmember *add_host_notification_command_to_contact(contact *cntct, char *c
 		return NULL;
 
 	/* duplicate vars */
-	if((new_commandsmember->command = (char *)strdup(command_name)) == NULL) {
+	if((new_commandsmember->command = (char *)strdup(command_name)) == NULL)
+		result = ERROR;
+
+	/* handle errors */
+	if(result == ERROR) {
+		my_free(new_commandsmember->command);
 		my_free(new_commandsmember);
 		return NULL;
 		}
@@ -1199,6 +1186,7 @@ commandsmember *add_host_notification_command_to_contact(contact *cntct, char *c
 /* adds a service notification command to a contact definition */
 commandsmember *add_service_notification_command_to_contact(contact *cntct, char *command_name) {
 	commandsmember *new_commandsmember = NULL;
+	int result = OK;
 
 	/* make sure we have the data we need */
 	if(cntct == NULL || (command_name == NULL || !strcmp(command_name, ""))) {
@@ -1211,7 +1199,12 @@ commandsmember *add_service_notification_command_to_contact(contact *cntct, char
 		return NULL;
 
 	/* duplicate vars */
-	if((new_commandsmember->command = (char *)strdup(command_name)) == NULL) {
+	if((new_commandsmember->command = (char *)strdup(command_name)) == NULL)
+		result = ERROR;
+
+	/* handle errors */
+	if(result == ERROR) {
+		my_free(new_commandsmember->command);
 		my_free(new_commandsmember);
 		return NULL;
 		}
@@ -1277,13 +1270,9 @@ contactgroup *add_contactgroup(char *name, char *alias) {
 		return NULL;
 		}
 
-	new_contactgroup->id = num_objects.contactgroups;
-	new_contactgroup->next=NULL;
+	new_contactgroup->id = num_objects.contactgroups++;
 	if(new_contactgroup->id)
 		contactgroup_list[new_contactgroup->id - 1].next = new_contactgroup;
-
-	num_objects.contactgroups++;
-
 	return new_contactgroup;
 	}
 
@@ -1292,6 +1281,7 @@ contactgroup *add_contactgroup(char *name, char *alias) {
 /* add a new member to a contact group */
 contactsmember *add_contact_to_contactgroup(contactgroup *grp, char *contact_name) {
 	contactsmember *new_contactsmember = NULL;
+	int result = OK;
 
 	/* make sure we have the data we need */
 	if(grp == NULL || (contact_name == NULL || !strcmp(contact_name, ""))) {
@@ -1304,7 +1294,12 @@ contactsmember *add_contact_to_contactgroup(contactgroup *grp, char *contact_nam
 		return NULL;
 
 	/* duplicate vars */
-	if((new_contactsmember->contact_name = (char *)strdup(contact_name)) == NULL){
+	if((new_contactsmember->contact_name = (char *)strdup(contact_name)) == NULL)
+		result = ERROR;
+
+	/* handle errors */
+	if(result == ERROR) {
+		my_free(new_contactsmember->contact_name);
 		my_free(new_contactsmember);
 		return NULL;
 		}
@@ -1489,7 +1484,6 @@ service *add_service(char *host_name, char *description, char *display_name, cha
 	new_service->flapping_comment_id = 0;
 	new_service->percent_state_change = 0.0;
 	new_service->modified_attributes = MODATTR_NONE;
-	new_service->servicegroups_ptr = NULL;
 #endif
 
 	/* add new service to hash table */
@@ -1528,13 +1522,9 @@ service *add_service(char *host_name, char *description, char *display_name, cha
 
 	add_service_link_to_host(h, new_service);
 
-	new_service->id = num_objects.services;
-	new_service->next = NULL;
+	new_service->id = num_objects.services++;
 	if(new_service->id)
 		service_list[new_service->id - 1].next = new_service;
-
-	num_objects.services++;
-
 	return new_service;
 	}
 
@@ -1601,26 +1591,25 @@ command *add_command(char *name, char *value) {
 	/* duplicate vars */
 	if((new_command->name = (char *)strdup(name)) == NULL)
 		return NULL;
-
-	if((new_command->command_line = (char *)strdup(value)) == NULL) {
-		my_free(new_command->name);
-		return NULL;
-		} 
+	if((new_command->command_line = (char *)strdup(value)) == NULL)
+		result = ERROR;
 
 	/* add new command to hash table */
-	result = dkhash_insert(object_hash_tables[COMMAND_SKIPLIST], new_command->name, NULL, new_command);
-	switch(result) {
-		case DKHASH_EDUPE:
-			logit(NSLOG_CONFIG_ERROR, TRUE, "Error: Command '%s' has already been defined\n", name);
-			result = ERROR;
-			break;
-		case DKHASH_OK:
-			result = OK;
-			break;
-		default:
-			logit(NSLOG_CONFIG_ERROR, TRUE, "Error: Could not add command '%s' to hash table\n", name);
-			result = ERROR;
-			break;
+	if(result == OK) {
+		result = dkhash_insert(object_hash_tables[COMMAND_SKIPLIST], new_command->name, NULL, new_command);
+		switch(result) {
+			case DKHASH_EDUPE:
+				logit(NSLOG_CONFIG_ERROR, TRUE, "Error: Command '%s' has already been defined\n", name);
+				result = ERROR;
+				break;
+			case DKHASH_OK:
+				result = OK;
+				break;
+			default:
+				logit(NSLOG_CONFIG_ERROR, TRUE, "Error: Could not add command '%s' to hash table\n", name);
+				result = ERROR;
+				break;
+			}
 		}
 
 	/* handle errors */
@@ -1630,13 +1619,9 @@ command *add_command(char *name, char *value) {
 		return NULL;
 		}
 
-	new_command->id = num_objects.commands;
-	new_command->next = NULL;
+	new_command->id = num_objects.commands++;
 	if(new_command->id)
 		command_list[new_command->id - 1].next = new_command;
-
-	num_objects.commands++;
-
 	return new_command;
 	}
 
@@ -1646,7 +1631,7 @@ command *add_command(char *name, char *value) {
 serviceescalation *add_serviceescalation(char *host_name, char *description, int first_notification, int last_notification, double notification_interval, char *escalation_period, int escalate_on_warning, int escalate_on_unknown, int escalate_on_critical, int escalate_on_recovery) {
 	serviceescalation *new_serviceescalation = NULL;
 	service *svc;
-	timeperiod *tp = NULL;
+	timeperiod *tp;
 
 	/* make sure we have the data we need */
 	if(host_name == NULL || !*host_name || description == NULL || !*description) {
@@ -1694,13 +1679,9 @@ serviceescalation *add_serviceescalation(char *host_name, char *description, int
 	new_serviceescalation->escalate_on_unknown = (escalate_on_unknown > 0) ? TRUE : FALSE;
 	new_serviceescalation->escalate_on_critical = (escalate_on_critical > 0) ? TRUE : FALSE;
 
-	new_serviceescalation->id = num_objects.serviceescalations;
-	new_serviceescalation->next = NULL;
+	new_serviceescalation->id = num_objects.serviceescalations++;
 	if(new_serviceescalation->id)
 		serviceescalation_list[new_serviceescalation->id - 1].next = new_serviceescalation;
-
-	num_objects.serviceescalations++;
-
 	return new_serviceescalation;
 	}
 
@@ -1812,13 +1793,9 @@ servicedependency *add_service_dependency(char *dependent_host_name, char *depen
 	new_servicedependency->fail_on_critical = (fail_on_critical == 1) ? TRUE : FALSE;
 	new_servicedependency->fail_on_pending = (fail_on_pending == 1) ? TRUE : FALSE;
 
-	new_servicedependency->id = num_objects.servicedependencies;
-	new_servicedependency->next = NULL;
+	new_servicedependency->id = num_objects.servicedependencies++;
 	if(new_servicedependency->id)
 		servicedependency_list[new_servicedependency->id - 1].next = new_servicedependency;
-
-	num_objects.servicedependencies++;
-
 	return new_servicedependency;
 	}
 
@@ -1885,13 +1862,9 @@ hostdependency *add_host_dependency(char *dependent_host_name, char *host_name, 
 		return NULL;
 		}
 
-	new_hostdependency->id = num_objects.hostdependencies;
-	new_hostdependency->next = NULL;
+	new_hostdependency->id = num_objects.hostdependencies++;
 	if(new_hostdependency->id)
 		hostdependency_list[new_hostdependency->id - 1].next = new_hostdependency;
-
-	num_objects.hostdependencies++;
-
 	return new_hostdependency;
 	}
 
@@ -1939,13 +1912,9 @@ hostescalation *add_hostescalation(char *host_name, int first_notification, int 
 	new_hostescalation->escalate_on_down = (escalate_on_down > 0) ? TRUE : FALSE;
 	new_hostescalation->escalate_on_unreachable = (escalate_on_unreachable > 0) ? TRUE : FALSE;
 
-	new_hostescalation->id = num_objects.hostescalations;
-	new_hostescalation->next=NULL;
+	new_hostescalation->id = num_objects.hostescalations++;
 	if(new_hostescalation->id)
 		hostescalation_list[new_hostescalation->id - 1].next = new_hostescalation;
-
-	num_objects.hostescalations++;
-
 	return new_hostescalation;
 	}
 
@@ -2748,10 +2717,8 @@ int free_object_data(void) {
 		this_customvariablesmember = this_contact->custom_variables;
 		while(this_customvariablesmember != NULL) {
 			next_customvariablesmember = this_customvariablesmember->next;
-			if (this_customvariablesmember->variable_name!=NULL)
-				my_free(this_customvariablesmember->variable_name);
-			if (this_customvariablesmember->variable_value!=NULL)
-				my_free(this_customvariablesmember->variable_value);
+			my_free(this_customvariablesmember->variable_name);
+			my_free(this_customvariablesmember->variable_value);
 			my_free(this_customvariablesmember);
 			this_customvariablesmember = next_customvariablesmember;
 			}
@@ -2760,12 +2727,8 @@ int free_object_data(void) {
 		my_free(this_contact->alias);
 		my_free(this_contact->email);
 		my_free(this_contact->pager);
-
-		for(x = 0; x < MAX_CONTACT_ADDRESSES; x++) {
-			if (this_contact->address[x] != NULL) 
-				my_free(this_contact->address[x]);
-			}
-
+		for(i = 0; i < MAX_CONTACT_ADDRESSES; i++)
+			my_free(this_contact->address[i]);
 
 #ifdef NSCORE
 		free_objectlist(&this_contact->contactgroups_ptr);
