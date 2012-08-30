@@ -1122,8 +1122,7 @@ contact *add_contact(char *name, char *alias, char *email, char *pager, char **a
 	/* handle errors */
 	if(result == ERROR) {
 		for(x = 0; x < MAX_CONTACT_ADDRESSES; x++)
-			if (new_contact->address[x]!=NULL)
-				my_free(new_contact->address[x]);
+			my_free(new_contact->address[x]);
 		my_free(new_contact->name);
 		my_free(new_contact->alias);
 		my_free(new_contact->email);
@@ -2704,8 +2703,7 @@ int free_object_data(void) {
 		my_free(this_contact->email);
 		my_free(this_contact->pager);
 		for(x = 0; x < MAX_CONTACT_ADDRESSES; x++)
-			if (this_contact->address[x]!=NULL)
-				my_free(this_contact->address[x]);
+			my_free(this_contact->address[x]);
 
 #ifdef NSCORE
 		free_objectlist(&this_contact->contactgroups_ptr);
