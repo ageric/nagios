@@ -2043,7 +2043,7 @@ int process_check_result_file(char *fname) {
 	char *input = NULL;
 	char *var = NULL;
 	char *val = NULL;
-	char *v1 = NULL, *v2 = NULL;
+	char *v2 = NULL;
 	time_t current_time;
 	check_result cr;
 
@@ -2095,10 +2095,9 @@ int process_check_result_file(char *fname) {
 			cr.output_file = fname;
 			}
 
-		if((var = my_strtok(input, "=")) == NULL)
-			continue;
-		if((val = my_strtok(NULL, "\n")) == NULL)
-			continue;
+                /* WAS: if((var = my_strtok(input, "=")) == NULL) continue 
+	         *      if((val = my_strtok(NULL, "\n")) == NULL) continue */
+		if (my_str2parts(input,'=',&var,&val)==0) continue;
 
 		/* found the file time */
 		if(!strcmp(var, "file_time")) {
@@ -2129,20 +2128,24 @@ int process_check_result_file(char *fname) {
 			else if(!strcmp(var, "latency"))
 				cr.latency = strtod(val, NULL);
 			else if(!strcmp(var, "start_time")) {
-				if((v1 = strtok(val, ".")) == NULL)
+				if((v2 = strchr(val, '.')) == NULL)
 					continue;
-				if((v2 = strtok(NULL, "\n")) == NULL)
-					continue;
-				cr.start_time.tv_sec = strtoul(v1, NULL, 0);
+				*v2 = '\0'; /* this actually is not necessary */
+				v2++;
+				cr.start_time.tv_sec = strtoul(val, NULL, 0);
 				cr.start_time.tv_usec = strtoul(v2, NULL, 0);
+				v2--;
+				*v2 = '.';
 				}
 			else if(!strcmp(var, "finish_time")) {
-				if((v1 = strtok(val, ".")) == NULL)
+				if ((v2 = strchr(val, '.')) == NULL)
 					continue;
-				if((v2 = strtok(NULL, "\n")) == NULL)
-					continue;
-				cr.finish_time.tv_sec = strtoul(v1, NULL, 0);
+				*v2 = '\0';
+				v2++;
+				cr.finish_time.tv_sec = strtoul(val, NULL, 0);
 				cr.finish_time.tv_usec = strtoul(v2, NULL, 0);
+				v2--;
+				*v2 = '.';
 				}
 			else if(!strcmp(var, "early_timeout"))
 				cr.early_timeout = atoi(val);
@@ -3246,8 +3249,9 @@ int query_update_api(void) {
 			if(in_header == TRUE)
 				continue;
 
-			var = strtok(ptr, "=");
-			val = strtok(NULL, "\n");
+			/* Replaced: var = strtok(ptr, "=");
+                        	     val = strtok(NULL, "\n"); */
+			if(my_str2parts(ptr,'=',&var,&val)==0) continue;
 
 			if(!strcmp(var, "UPDATE_AVAILABLE")) {
 				update_available = atoi(val);

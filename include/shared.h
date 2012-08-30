@@ -35,6 +35,7 @@ struct object_count {
 
 extern struct object_count num_objects;
 
+extern int my_str2parts(const char*, char, char**, char**);
 extern char *my_strtok(char *buffer, char *tokens);
 extern char *my_strsep(char **stringp, const char *delim);
 extern mmapfile *mmap_fopen(char *filename);
