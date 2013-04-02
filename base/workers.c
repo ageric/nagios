@@ -128,7 +128,7 @@ int wproc_can_spawn(struct load_control *lc)
 	return lc->jobs_limit > lc->jobs_running;
 }
 
-static struct wproc_job *create_job(int type, void *arg, time_t timeout, const char *command)
+static struct wproc_job *create_job(int type, void *arg, time_t timeout, const char *cmd)
 {
 	struct wproc_job *job;
 
@@ -141,7 +141,7 @@ static struct wproc_job *create_job(int type, void *arg, time_t timeout, const c
 	job->type = type;
 	job->arg = arg;
 	job->timeout = timeout;
-	job->command = strdup(command);
+	job->command = strdup(cmd);
 
 	return job;
 }
