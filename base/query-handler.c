@@ -166,7 +166,7 @@ static int qh_input(int sd, int events, void *ioc_)
 			query = space + 1;
 			query_len = len - ((unsigned long)query - (unsigned long)buf);
 		} else {
-			query = "";
+			query = buf + strlen(buf) - 1;
 			query_len = 0;
 		}
 
@@ -180,7 +180,7 @@ static int qh_input(int sd, int events, void *ioc_)
 		}
 
 		/* strip trailing newlines */
-		while (query_len > 0 && (query[query_len - 1] == 0 || query[query_len - 1] == '\n'))
+		while (query && query_len > 0 && (query[query_len - 1] == 0 || query[query_len - 1] == '\n'))
 			query[--query_len] = 0;
 
 		/* now pass the query to the handler */

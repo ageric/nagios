@@ -194,7 +194,7 @@ int allow_empty_hostgroup_assignment = DEFAULT_ALLOW_EMPTY_HOSTGROUP_ASSIGNMENT;
 
 notification    *notification_list;
 
-unsigned long	max_check_result_file_age = DEFAULT_MAX_CHECK_RESULT_AGE;
+time_t max_check_result_file_age = DEFAULT_MAX_CHECK_RESULT_AGE;
 
 check_stats     check_statistics[MAX_CHECK_STATS_TYPES];
 

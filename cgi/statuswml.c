@@ -1281,8 +1281,7 @@ void display_ping(void) {
 			/* run the ping command */
 			fp = popen(buffer, "r");
 			if(fp) {
-				while(1) {
-					fgets(buffer, sizeof(buffer) - 1, fp);
+				while(fgets(buffer, sizeof(buffer) - 1, fp)) {
 					if(feof(fp))
 						break;
 
@@ -1350,8 +1349,7 @@ void display_traceroute(void) {
 
 		fp = popen(buffer, "r");
 		if(fp) {
-			while(1) {
-				fgets(buffer, sizeof(buffer) - 1, fp);
+			while(fgets(buffer, sizeof(buffer) - 1, fp)) {
 				if(feof(fp))
 					break;
 

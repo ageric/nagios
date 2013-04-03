@@ -210,7 +210,7 @@ unsigned long bitmap_count_unset_bits(const bitmap *bm)
 }
 
 #define BITMAP_MATH(a, b) \
-	int i; \
+	unsigned int i; \
 	bitmap *bm; \
 	/* a->alloc has to be smallest */ \
 	if (a->alloc > b->alloc) { \
@@ -262,17 +262,6 @@ bitmap *bitmap_unite(bitmap *res, const bitmap *addme)
 		res->vector[i] |= addme->vector[i];
 	}
 	return res;
-}
-
-/*
- * Remove all elements from a that are also in b.
- */
-bitmap *bitmap_minus(const bitmap *a, const bitmap *b)
-{
-	BITMAP_MATH(a, b) {
-		bm->vector[i] = a->vector[i] & ~(b->vector[i]);
-	}
-	return bm;
 }
 
 /*

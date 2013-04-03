@@ -51,5 +51,11 @@ extern void get_datetime_string(time_t *raw_time, char *buffer,
 extern void get_time_breakdown(unsigned long raw_time, int *days, int *hours,
                                int *minutes, int *seconds);
 
+/* silly helpers useful pretty much all over the place */
+extern const char *service_state_name(int state);
+extern const char *host_state_name(int state);
+extern const char *state_type_name(int state_type);
+extern const char *check_type_name(int check_type);
+
 NAGIOS_END_DECL
 #endif

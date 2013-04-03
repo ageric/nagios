@@ -176,7 +176,7 @@ extern int child_processes_fork_twice;
 
 extern char *use_timezone;
 
-extern unsigned long max_check_result_file_age;
+extern time_t max_check_result_file_age;
 
 extern char *debug_file;
 extern int debug_level;
@@ -407,11 +407,6 @@ struct nerd_subscription {
 /******************** FUNCTIONS **********************/
 extern int set_loadctl_options(char *opts, unsigned int len);
 
-/* silly helpers useful pretty much all over the place */
-extern const char *service_state_name(int state);
-extern const char *host_state_name(int state);
-extern const char *state_type_name(int state_type);
-extern const char *check_type_name(int check_type);
 extern const char *check_result_source(check_result *cr);
 
 /*** Nagios Event Radio Dispatcher functions ***/
@@ -433,6 +428,7 @@ typedef int (*qh_handler)(int, char *, unsigned int);
 extern int qh_init(const char *path);
 extern void qh_deinit(const char *path);
 extern int qh_register_handler(const char *name, const char *description, unsigned int options, qh_handler handler);
+extern int qh_deregister_handler(const char *name);
 extern const char *qh_strerror(int code);
 
 /**** Configuration Functions ****/

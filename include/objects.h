@@ -94,7 +94,7 @@ NAGIOS_BEGIN_DECL
 
 /* macros useful with both hosts and services */
 #define flag_set(c, flag)    (c |= (flag))
-#define flag_get(c, flag)    (c & (flag))
+#define flag_get(c, flag)    ((c) & (flag))
 #define flag_isset(c, flag)  (flag_get((c), (flag)) == (flag))
 #define flag_unset(c, flag)  (c &= ~(flag))
 #define should_stalk(o) flag_isset(o->stalking_options, 1 << o->current_state)

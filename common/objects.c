@@ -2466,8 +2466,7 @@ int free_object_data(void) {
 	customvariablesmember *next_customvariablesmember = NULL;
 	commandsmember *this_commandsmember = NULL;
 	commandsmember *next_commandsmember = NULL;
-	register int x = 0;
-	register int i = 0;
+	unsigned int i = 0, x = 0;
 
 
 	/*

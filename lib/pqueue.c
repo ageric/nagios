@@ -23,9 +23,9 @@
 #include "pqueue.h"
 
 
-#define left(i)   ((i) << 1)
-#define right(i)  (((i) << 1) + 1)
-#define parent(i) ((i) >> 1)
+#define left(i)   (unsigned long)((i) << 1)
+#define right(i)  (unsigned long)(((i) << 1) + 1)
+#define parent(i) (unsigned long)((i) >> 1)
 
 
 pqueue_t *
@@ -222,11 +222,11 @@ pqueue_peek(pqueue_t *q)
 void
 pqueue_dump(pqueue_t *q, FILE *out, pqueue_print_entry_f print)
 {
-	int i;
+	unsigned int i;
 
 	fprintf(out, "posn\tleft\tright\tparent\tmaxchild\t...\n");
 	for (i = 1; i < q->size ; i++) {
-		fprintf(out, "%d\t%d\t%d\t%d\t%ul\t",
+		fprintf(out, "%u\t%lu\t%lu\t%lu\t%ul\t",
 		        i,
 		        left(i), right(i), parent(i),
 		        (unsigned int)maxchild(q, i));

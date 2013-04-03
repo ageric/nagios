@@ -202,7 +202,9 @@ static void destroy_job(struct wproc_worker *wp, struct wproc_job *job)
 	}
 
 	my_free(job->command);
-	wp->jobs_running--;
+	if (wp) {
+		wp->jobs_running--;
+	}
 	loadctl.jobs_running--;
 
 	free(job);
@@ -238,12 +240,13 @@ static int wproc_destroy(struct wproc_worker *wp, int flags)
 	if (self == nagios_pid && !force)
 		return 0;
 
+	fanout_destroy(wp->jobs, fo_destroy_job);
+	wp->jobs = NULL;
+
 	/* free all memory when either forcing or a worker called us */
 	iocache_destroy(wp->ioc);
 	wp->ioc = NULL;
 	my_free(wp->name);
-	fanout_destroy(wp->jobs, fo_destroy_job);
-	wp->jobs = NULL;
 
 	/* workers must never control other workers, so they return early */
 	if (self != nagios_pid)

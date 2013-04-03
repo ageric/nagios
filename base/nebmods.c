@@ -355,7 +355,7 @@ int neb_unload_module(nebmodule *mod, int flags, int reason) {
 	if(mod->core_module == FALSE) {
 
 		/* unload the module */
-		result = dlclose(mod->module_handle);
+		//result = dlclose(mod->module_handle);
 		}
 
 	/* mark the module as being unloaded */
