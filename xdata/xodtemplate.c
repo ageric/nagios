@@ -4201,8 +4201,8 @@ int xodtemplate_duplicate_objects(void) {
 	xodtemplate_serviceescalation *temp_serviceescalation = NULL;
 	xodtemplate_hostextinfo *next_he = NULL, *temp_hostextinfo = NULL;
 	xodtemplate_serviceextinfo *next_se = NULL, *temp_serviceextinfo = NULL;
-	objectlist *master_hostlist, *master_servicelist;
-	objectlist *list, *next;
+	objectlist *master_hostlist = NULL, *master_servicelist = NULL;
+	objectlist *list = NULL, *next = NULL;
 
 
 	/*************************************/
@@ -4352,13 +4352,14 @@ int xodtemplate_duplicate_objects(void) {
 	/****** DUPLICATE SERVICEEXTINFO DEFINITIONS WITH ONE OR MORE HOSTGROUP AND/OR HOST NAMES ******/
 	for(temp_serviceextinfo = xodtemplate_serviceextinfo_list; temp_serviceextinfo != NULL; temp_serviceextinfo = next_se) {
 		next_se = temp_serviceextinfo->next;
+		master_servicelist = NULL;
 
 		/* skip definitions without enough data */
 		if(temp_serviceextinfo->hostgroup_name == NULL && temp_serviceextinfo->host_name == NULL)
 			continue;
 
 		/* get list of hosts */
-		if(xodtemplate_create_service_list(&master_servicelist, service_map, temp_serviceextinfo->hostgroup_name, temp_serviceextinfo->host_name, NULL, temp_serviceextinfo->service_description, temp_serviceextinfo->_config_file, temp_serviceextinfo->_start_line) != OK) {
+		if(xodtemplate_create_service_list(&master_servicelist, service_map, temp_serviceextinfo->host_name, temp_serviceextinfo->hostgroup_name, NULL, temp_serviceextinfo->service_description, temp_serviceextinfo->_config_file, temp_serviceextinfo->_start_line) != OK) {
 			logit(NSLOG_CONFIG_ERROR, TRUE, "Error: Could not expand hostgroups and/or hosts specified in extended service info (config file '%s', starting on line %d)\n", xodtemplate_config_file_name(temp_serviceextinfo->_config_file), temp_serviceextinfo->_start_line);
 			return ERROR;
 			}
@@ -4367,11 +4368,14 @@ int xodtemplate_duplicate_objects(void) {
 		for(list = master_servicelist; list; list = next) {
 			xodtemplate_service *s = (xodtemplate_service *)list->object_ptr;
 			next = list->next;
-			free(list);
-			if(bitmap_isset(service_map, s->id))
+			if(bitmap_isset(service_map, s->id)) {
+				my_free(list);
 				continue;
-			xodtemplate_merge_service_extinfo_object(s, temp_serviceextinfo);
 			}
+			xodtemplate_merge_service_extinfo_object(s, temp_serviceextinfo);
+			my_free(list);
+		}
+
 		/* now we're done, so we might as well kill it off */
 		my_free(temp_serviceextinfo->template);
 		my_free(temp_serviceextinfo->name);
