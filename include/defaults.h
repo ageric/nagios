@@ -84,5 +84,11 @@
 #define BASE_UPDATE_CHECK_RETRY_INTERVAL                        60*60*1  /* 1 hour base retry interval */
 #define UPDATE_CHECK_RETRY_INTERVAL_WOBBLE                      60*60*3  /* 3 hour wobble on top of base retry interval */
 
-#define DEFAULT_ALLOW_EMPTY_HOSTGROUP_ASSIGNMENT                          0        /* Do not allow empty hostgroups by default */
+#define DEFAULT_ALLOW_EMPTY_HOSTGROUP_ASSIGNMENT        2        /* Allow assigning to empty hostgroups by default, but warn about it */
+
+#define DEFAULT_HOST_PERFDATA_FILE_TEMPLATE "[HOSTPERFDATA]\t$TIMET$\t$HOSTNAME$\t$HOSTEXECUTIONTIME$\t$HOSTOUTPUT$\t$HOSTPERFDATA$"
+#define DEFAULT_SERVICE_PERFDATA_FILE_TEMPLATE "[SERVICEPERFDATA]\t$TIMET$\t$HOSTNAME$\t$SERVICEDESC$\t$SERVICEEXECUTIONTIME$\t$SERVICELATENCY$\t$SERVICEOUTPUT$\t$SERVICEPERFDATA$"
+#define DEFAULT_HOST_PERFDATA_PROCESS_EMPTY_RESULTS 1
+#define DEFAULT_SERVICE_PERFDATA_PROCESS_EMPTY_RESULTS 1
+
 #endif /* INCLUDE_defaults_h__ */

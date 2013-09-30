@@ -16,6 +16,7 @@
 struct execution_information {
 	squeue_event *sq_event;
 	pid_t pid;
+	int state;
 	struct timeval start;
 	struct timeval stop;
 	float runtime;
@@ -24,9 +25,10 @@ struct execution_information {
 
 static iobroker_set *iobs;
 static squeue_t *sq;
-static unsigned int started, running_jobs;
+static unsigned int started, running_jobs, timeouts, reapable;
 static int master_sd;
 static int parent_pid;
+static fanout_table *ptab;
 
 static void exit_worker(int code, const char *msg)
 {
@@ -39,9 +41,9 @@ static void exit_worker(int code, const char *msg)
 
 	/*
 	 * We must kill our children, so let's embark on that
-	 * large scale filicide. First SIGTERM to all processes
-	 * in our group, and then SIGKILL to every item in our
-	 * event queue
+	 * large scale filicide. Each process should be in a
+	 * process group of its own, so we can signal not only
+	 * the plugin but also all of its children.
 	 */
 	signal(SIGTERM, SIG_IGN);
 	kill(0, SIGTERM);
@@ -49,8 +51,10 @@ static void exit_worker(int code, const char *msg)
 		; /* do nothing */
 	sleep(1);
 	while ((cp = (child_process *)squeue_pop(sq))) {
-		(void)kill(cp->ei->pid, SIGKILL);
+		/* kill all processes in the child's process group */
+		(void)kill(-cp->ei->pid, SIGKILL);
 	}
+	sleep(1);
 	while (waitpid(-1, &discard, WNOHANG) > 0)
 		; /* do nothing */
 
@@ -63,6 +67,7 @@ static void exit_worker(int code, const char *msg)
  * but avoids doing several extra malloc()+free() for this
  * pretty simple case.
  */
+__attribute__((__format__(__printf__, 1, 2)))
 static void wlog(const char *fmt, ...)
 {
 	va_list ap;
@@ -173,6 +178,43 @@ int worker_buf2kvvec_prealloc(struct kvvec *kvv, char *buf, unsigned long len, i
 /* forward declaration */
 static void gather_output(child_process *cp, iobuf *io, int final);
 
+static void destroy_job(child_process *cp)
+{
+	/*
+	 * we must remove the job's timeout ticker,
+	 * or we'll end up accessing an already free()'d
+	 * pointer, or the pointer to a different child.
+	 */
+	squeue_remove(sq, cp->ei->sq_event);
+	running_jobs--;
+	fanout_remove(ptab, cp->ei->pid);
+
+	if (cp->outstd.buf) {
+		free(cp->outstd.buf);
+		cp->outstd.buf = NULL;
+	}
+	if (cp->outerr.buf) {
+		free(cp->outerr.buf);
+		cp->outerr.buf = NULL;
+	}
+
+	kvvec_destroy(cp->request, KVVEC_FREE_ALL);
+	free(cp->cmd);
+
+	free(cp->ei);
+	free(cp);
+}
+
+#define strip_nul_bytes(io) \
+	do { \
+		char *nul; \
+		if (!io.buf || !*io.buf) \
+			io.len = 0; \
+		else if ((nul = memchr(io.buf, 0, io.len))) { \
+			io.len = (unsigned long)nul - (unsigned long)io.buf; \
+		} \
+	} while (0)
+
 int finish_job(child_process *cp, int reason)
 {
 	static struct kvvec resp = KVVEC_INITIALIZER;
@@ -189,6 +231,10 @@ int finish_job(child_process *cp, int reason)
 		iobroker_close(iobs, cp->outerr.fd);
 	}
 
+	/* Make sure network-supplied data doesn't contain nul bytes */
+	strip_nul_bytes(cp->outstd);
+	strip_nul_bytes(cp->outerr);
+
 	/* how many key/value pairs do we need? */
 	if (kvvec_init(&resp, 12 + cp->request->kv_pairs) == NULL) {
 		/* what the hell do we do now? */
@@ -203,14 +249,6 @@ int finish_job(child_process *cp, int reason)
 		wlog("started: %d; running: %d; finished: %d\n",
 			 started, running_jobs, started - running_jobs);
 	}
-
-	/*
-	 * we must remove the job's timeout ticker,
-	 * or we'll end up accessing an already free()'d
-	 * pointer, or the pointer to a different child.
-	 */
-	squeue_remove(sq, cp->ei->sq_event);
-	running_jobs--;
 
 	cp->ei->runtime = tv_delta_f(&cp->ei->start, &cp->ei->stop);
 
@@ -227,13 +265,11 @@ int finish_job(child_process *cp, int reason)
 		kvvec_addkv_wlen(&resp, kv->key, kv->key_len, kv->value, kv->value_len);
 	}
 	kvvec_addkv(&resp, "wait_status", mkstr("%d", cp->ret));
-	kvvec_addkv_wlen(&resp, "outstd", 6, cp->outstd.buf, cp->outstd.len);
-	kvvec_addkv_wlen(&resp, "outerr", 6, cp->outerr.buf, cp->outerr.len);
 	kvvec_add_tv(&resp, "start", cp->ei->start);
 	kvvec_add_tv(&resp, "stop", cp->ei->stop);
 	kvvec_addkv(&resp, "runtime", mkstr("%f", cp->ei->runtime));
 	if (!reason) {
-		/* child exited nicely */
+		/* child exited nicely (or with a signal, so check wait_status) */
 		kvvec_addkv(&resp, "exited_ok", "1");
 		kvvec_add_tv(&resp, "ru_utime", ru->ru_utime);
 		kvvec_add_tv(&resp, "ru_stime", ru->ru_stime);
@@ -246,23 +282,11 @@ int finish_job(child_process *cp, int reason)
 		kvvec_addkv(&resp, "exited_ok", "0");
 		kvvec_addkv(&resp, "error_code", mkstr("%d", reason));
 	}
+	kvvec_addkv_wlen(&resp, "outerr", 6, cp->outerr.buf, cp->outerr.len);
+	kvvec_addkv_wlen(&resp, "outstd", 6, cp->outstd.buf, cp->outstd.len);
 	ret = worker_send_kvvec(master_sd, &resp);
 	if (ret < 0 && errno == EPIPE)
 		exit_worker(1, "Failed to send kvvec struct to master");
-
-	if (cp->outstd.buf) {
-		free(cp->outstd.buf);
-		cp->outstd.buf = NULL;
-	}
-	if (cp->outerr.buf) {
-		free(cp->outerr.buf);
-		cp->outerr.buf = NULL;
-	}
-
-	kvvec_destroy(cp->request, KVVEC_FREE_ALL);
-	free(cp->cmd);
-	free(cp->ei);
-	free(cp);
 
 	return 0;
 }
@@ -270,13 +294,10 @@ int finish_job(child_process *cp, int reason)
 static int check_completion(child_process *cp, int flags)
 {
 	int result, status;
-	time_t max_time;
 
 	if (!cp || !cp->ei->pid) {
 		return 0;
 	}
-
-	max_time = time(NULL) + 1;
 
 	/*
 	 * we mustn't let EINTR interrupt us, since it could well
@@ -285,80 +306,108 @@ static int check_completion(child_process *cp, int flags)
 	do {
 		errno = 0;
 		result = wait4(cp->ei->pid, &status, flags, &cp->ei->rusage);
-	} while (result == -1 && errno == EINTR && time(NULL) < max_time);
+	} while (result < 0 && errno == EINTR);
 
-	if (result == cp->ei->pid) {
+	if (result == cp->ei->pid || (result < 0 && errno == ECHILD)) {
 		cp->ret = status;
 		finish_job(cp, 0);
+		destroy_job(cp);
 		return 0;
 	}
 
-	if (errno == ECHILD) {
-		cp->ret = status;
-		finish_job(cp, errno);
-	}
+	if (!result)
+		return -1;
 
 	return -errno;
 }
 
+/*
+ * "What can the harvest hope for, if not for the care
+ * of the Reaper Man?"
+ *   -- Terry Pratchett, Reaper Man
+ *
+ * We end up here no matter if the job is stale (ie, the child is
+ * stuck in uninterruptable sleep) or if it's the first time we try
+ * to kill it.
+ * A job is considered reaped once we reap our direct child, in
+ * which case init will become parent of our grandchildren.
+ * It's also considered fully reaped if kill() results in ESRCH or
+ * EPERM, or if wait()ing for the process group results in ECHILD.
+ */
 static void kill_job(child_process *cp, int reason)
 {
-	int ret;
-	struct rusage ru;
+	int ret, status, reaped = 0;
+	int pid = cp ? cp->ei->pid : 0;
 
-	if (!cp->ei->pid) {
-		wlog("No pid for job %d (%u running); '%s'", cp->id, running_jobs, cp->cmd);
+	/*
+	 * first attempt at reaping, so see if we just failed to
+	 * notice that things were going wrong her
+	 */
+	if (reason == ETIME && !check_completion(cp, WNOHANG)) {
+		timeouts++;
+		wlog("job %d with pid %d reaped at timeout. timeouts=%u; started=%u", cp->id, pid, timeouts, started);
 		return;
 	}
 
 	/* brutal but efficient */
-	ret = kill(cp->ei->pid, SIGKILL);
-	if (ret < 0) {
+	if (kill(-cp->ei->pid, SIGKILL) < 0) {
 		if (errno == ESRCH) {
-			finish_job(cp, reason);
-			return;
+			reaped = 1;
+		} else {
+			wlog("kill(-%d, SIGKILL) failed: %s\n", cp->ei->pid, strerror(errno));
 		}
-		wlog("kill(%d, SIGKILL) failed: %s\n", cp->ei->pid, strerror(errno));
 	}
 
-	ret = wait4(cp->ei->pid, &cp->ret, 0, &ru);
-	finish_job(cp, reason);
+	/*
+	 * we must iterate at least once, in case kill() returns
+	 * ESRCH when there's zombies
+	 */
+	do {
+		ret = waitpid(cp->ei->pid, &status, WNOHANG);
+		if (ret < 0 && errno == EINTR)
+			continue;
 
-#ifdef PLAY_NICE_IN_kill_job
-	int i, sig = SIGTERM;
+		if (ret == cp->ei->pid || (ret < 0 && errno == ECHILD)) {
+			reaped = 1;
+			break;
+		}
+		if (!ret) {
+			struct timeval tv;
 
-	pid = cp->ei->pid;
-
-	for (i = 0; i < 2; i++) {
-		/* check one last time if the job is done */
-		ret = check_completion(cp, WNOHANG);
-		if (!ret || ret == -ECHILD) {
-			/* check_completion ran finish_job() */
+			gettimeofday(&tv, NULL);
+			/*
+			 * stale process (signal may not have been delivered, or
+			 * the child can be stuck in uninterruptible sleep). We
+			 * can't hang around forever, so just reschedule a new
+			 * reap attempt later.
+			 */
+			if (reason == ESTALE) {
+				tv.tv_sec += 5;
+				wlog("Failed to reap child with pid %d. Next attempt @ %lu.%lu", cp->ei->pid, tv.tv_sec, tv.tv_usec);
+			} else {
+				tv.tv_usec = 250000;
+				if (tv.tv_usec > 1000000) {
+					tv.tv_usec -= 1000000;
+					tv.tv_sec += 1;
+				}
+				cp->ei->state = ESTALE;
+				finish_job(cp, reason);
+			}
+			squeue_remove(sq, cp->ei->sq_event);
+			cp->ei->sq_event = squeue_add_tv(sq, &tv, cp);
 			return;
 		}
+	} while (!reaped);
 
-		/* not done, so signal it. SIGTERM first and check again */
-		errno = 0;
-		ret = kill(pid, sig);
-		if (ret < 0) {
-			finish_job(cp, -errno);
-		}
-		sig = SIGKILL;
-		check_completion(cp, WNOHANG);
-		if (ret < 0) {
-			finish_job(cp, errno);
-		}
-		usleep(50000);
-	}
-#endif /* PLAY_NICE_IN_kill_job */
+	if (cp->ei->state != ESTALE)
+		finish_job(cp, reason);
+	else
+		wlog("job %d (pid=%d): Dormant child reaped", cp->id, cp->ei->pid);
+	destroy_job(cp);
 }
 
 static void gather_output(child_process *cp, iobuf *io, int final)
 {
-	iobuf *other_io;
-
-	other_io = io == &cp->outstd ? &cp->outerr : &cp->outstd;
-
 	for (;;) {
 		char buf[4096];
 		int rd;
@@ -367,8 +416,20 @@ static void gather_output(child_process *cp, iobuf *io, int final)
 		if (rd < 0) {
 			if (errno == EINTR)
 				continue;
-			/* XXX: handle the error somehow */
-			check_completion(cp, WNOHANG);
+			if (!final && errno != EAGAIN)
+				wlog("job %d (pid=%d): Failed to read(): %s", cp->id, cp->ei->pid, strerror(errno));
+		}
+
+		/*
+		 * Close down on bad, zero and final reads (we don't get
+		 * EAGAIN, so all errors are really unfixable)
+		 */
+		if (rd <= 0 || final) {
+			iobroker_close(iobs, io->fd);
+			io->fd = -1;
+			if (!final)
+				check_completion(cp, WNOHANG);
+			break;
 		}
 
 		if (rd) {
@@ -377,14 +438,6 @@ static void gather_output(child_process *cp, iobuf *io, int final)
 			memcpy(&io->buf[io->len], buf, rd);
 			io->len += rd;
 			io->buf[io->len] = '\0';
-		} else if (!final) {
-			iobroker_close(iobs, io->fd);
-			io->fd = -1;
-			if (other_io->fd < 0) {
-				check_completion(cp, 0);
-			} else {
-				check_completion(cp, WNOHANG);
-			}
 		}
 		break;
 	}
@@ -405,6 +458,39 @@ static int stdout_handler(int fd, int events, void *cp_)
 	return 0;
 }
 
+static void sigchld_handler(int sig)
+{
+	reapable++;
+}
+
+static void reap_jobs(void)
+{
+	int reaped = 0;
+	do {
+		int pid, status;
+		struct rusage ru;
+		pid = wait3(&status, WNOHANG, &ru);
+		if (pid > 0) {
+			struct child_process *cp;
+
+			reapable--;
+			if (!(cp = fanout_get(ptab, pid))) {
+				/* we reaped a lost child. Odd that */
+				continue;
+			}
+			cp->ret = status;
+			memcpy(&cp->ei->rusage, &ru, sizeof(ru));
+			reaped++;
+			if (cp->ei->state != ESTALE)
+				finish_job(cp, cp->ei->state);
+			destroy_job(cp);
+		}
+		else if (!pid || (pid < 0 && errno == ECHILD)) {
+			reapable = 0;
+		}
+	} while (reapable);
+}
+
 int start_cmd(child_process *cp)
 {
 	int pfd[2] = {-1, -1}, pfderr[2] = {-1, -1};
@@ -420,8 +506,13 @@ int start_cmd(child_process *cp)
 	if (!cp->ei->pid) {
 		return -1;
 	}
+
+	/* We must never block, even if plugins issue '_exit()' */
+	fcntl(cp->outstd.fd, F_SETFL, O_NONBLOCK);
+	fcntl(cp->outerr.fd, F_SETFL, O_NONBLOCK);
 	iobroker_register(iobs, cp->outstd.fd, cp, stdout_handler);
 	iobroker_register(iobs, cp->outerr.fd, cp, stderr_handler);
+	fanout_add(ptab, cp->ei->pid, cp);
 
 	return 0;
 }
@@ -582,12 +673,14 @@ void enter_worker(int sd, int (*cb)(child_process*))
 	(void)chdir("/tmp");
 	(void)chdir("nagios-workers");
 
+	ptab = fanout_create(4096);
+
 	if (setpgid(0, 0)) {
 		/* XXX: handle error somehow, or maybe just ignore it */
 	}
 
-	/* we need to catch child signals the default way */
-	signal(SIGCHLD, SIG_DFL);
+	/* we need to catch child signals to mark jobs as reapable */
+	signal(SIGCHLD, sigchld_handler);
 
 	fcntl(fileno(stdout), F_SETFD, FD_CLOEXEC);
 	fcntl(fileno(stderr), F_SETFD, FD_CLOEXEC);
@@ -632,12 +725,19 @@ void enter_worker(int sd, int (*cb)(child_process*))
 			if (poll_time > 0)
 				break;
 
-			/* this job timed out, so kill it */
-			wlog("job with pid %d timed out. Killing it", cp->ei->pid);
-			kill_job(cp, ETIME);
+			if (cp->ei->state == ESTALE) {
+				kill_job(cp, ESTALE);
+			} else {
+				/* this job timed out, so kill it */
+				wlog("job %d (pid=%d) timed out. Killing it", cp->id, cp->ei->pid);
+				kill_job(cp, ETIME);
+			}
 		}
 
 		iobroker_poll(iobs, poll_time);
+
+		if (reapable)
+			reap_jobs();
 	}
 
 	/* we exit when the master shuts us down */

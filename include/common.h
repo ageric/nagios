@@ -24,8 +24,8 @@
 
 #include "shared.h"
 
-#define PROGRAM_VERSION "3.99.96"
-#define PROGRAM_MODIFICATION_DATE "03-14-2013"
+#define PROGRAM_VERSION "4.0.0"
+#define PROGRAM_MODIFICATION_DATE "09-20-2013"
 
 NAGIOS_BEGIN_DECL
 
@@ -41,8 +41,10 @@ extern int log_rotation_method;
 extern int check_external_commands;
 /* set this if you're going to add a ton of comments at once */
 extern int defer_comment_sorting;
+extern unsigned long next_downtime_id;
 
 extern char *object_cache_file;
+extern char *status_file;
 
 extern time_t program_start;
 extern int nagios_pid;
@@ -347,6 +349,14 @@ NAGIOS_END_DECL
 /* custom command introduced in Nagios 3.x */
 #define CMD_CUSTOM_COMMAND                              999
 
+/**************************** COMMAND ERRORS *****************************/
+#define CMD_ERROR_OK 0 /* No errors encountered */
+#define CMD_ERROR_UNKNOWN_COMMAND 1 /* Unknown/unsupported command */
+#define CMD_ERROR_MALFORMED_COMMAND 2 /* Command malformed/missing timestamp? */
+#define CMD_ERROR_INTERNAL_ERROR 3 /* Internal error */
+#define CMD_ERROR_FAILURE 4 /* Command routine failed */
+
+extern const char *cmd_error_strerror(int error_code);
 
 /**************************** CHECK TYPES ********************************/
 
@@ -409,6 +419,7 @@ NAGIOS_END_DECL
 #define CHECK_OPTION_FORCE_EXECUTION	1	/* force execution of a check (ignores disabled services/hosts, invalid timeperiods) */
 #define CHECK_OPTION_FRESHNESS_CHECK    2       /* this is a freshness check */
 #define CHECK_OPTION_ORPHAN_CHECK       4       /* this is an orphan check */
+#define CHECK_OPTION_DEPENDENCY_CHECK   8       /* dependency check. different scheduling rules apply */
 
 
 /**************************** PROGRAM MODES ******************************/

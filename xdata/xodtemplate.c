@@ -711,7 +711,7 @@ int xodtemplate_process_config_file(char *filename, int options) {
 
 				/* close out current definition */
 				if(xodtemplate_end_object_definition(options) == ERROR) {
-					logit(NSLOG_CONFIG_ERROR, TRUE, "Error: Could not complete object definition in file '%s' on line %d.\n", filename, current_line);
+					logit(NSLOG_CONFIG_ERROR, TRUE, "Error: Could not complete object definition in file '%s' on line %d. Have you named all your objects?\n", filename, current_line);
 					result = ERROR;
 					break;
 					}
@@ -1270,7 +1270,6 @@ int xodtemplate_add_object_property(char *input, int options) {
 					result = ERROR;
 				}
 			else if(!strcmp(variable, "name")) {
-
 				if((temp_command->name = (char *)strdup(value)) == NULL)
 					result = ERROR;
 
@@ -3467,16 +3466,47 @@ int xodtemplate_add_object_property(char *input, int options) {
 
 
 
+#define xod_check_complete(otype) \
+	do { \
+		xodtemplate_##otype *o = (xodtemplate_##otype *)xodtemplate_current_object; \
+		if (o->register_object && !o->otype##_name && !o->name) { \
+			return ERROR; \
+		} \
+	} while(0)
 /* completes an object definition */
 int xodtemplate_end_object_definition(int options) {
 	int result = OK;
 
-	if (use_precached_objects == TRUE) {
-		switch(xodtemplate_current_object_type) {
-		case XODTEMPLATE_HOSTESCALATION: xodcount.hostescalations++; break;
-		case XODTEMPLATE_SERVICEESCALATION: xodcount.serviceescalations++; break;
-			}
-		}
+	switch(xodtemplate_current_object_type) {
+	case XODTEMPLATE_HOSTESCALATION:
+		xodcount.hostescalations += !!use_precached_objects;
+		break;
+	case XODTEMPLATE_SERVICEESCALATION:
+		xodcount.serviceescalations += !!use_precached_objects;
+		break;
+	case XODTEMPLATE_TIMEPERIOD:
+		xod_check_complete(timeperiod);
+		break;
+	case XODTEMPLATE_COMMAND:
+		xod_check_complete(command);
+		break;
+	case XODTEMPLATE_CONTACT:
+		xod_check_complete(contact);
+		break;
+	case XODTEMPLATE_CONTACTGROUP:
+		xod_check_complete(contactgroup);
+		break;
+	case XODTEMPLATE_HOST:
+		xod_check_complete(host);
+		break;
+	case XODTEMPLATE_HOSTGROUP:
+		xod_check_complete(hostgroup);
+		break;
+	case XODTEMPLATE_SERVICEGROUP:
+		xod_check_complete(servicegroup);
+		break;
+	}
+
 
 	xodtemplate_current_object = NULL;
 	xodtemplate_current_object_type = XODTEMPLATE_NONE;
@@ -3912,25 +3942,33 @@ int xodtemplate_duplicate_services(void) {
 		/* clear for each round */
 		bitmap_clear(host_map);
 
-		/* skip service definitions without enough data */
-		if(temp_service->hostgroup_name == NULL && temp_service->host_name == NULL)
-			continue;
-
 		/* skip services that shouldn't be registered */
 		if(temp_service->register_object == FALSE)
 			continue;
+
+		/* bail out on service definitions without enough data */
+		if((temp_service->hostgroup_name == NULL && temp_service->host_name == NULL) || temp_service->service_description == NULL) {
+			logit(NSLOG_CONFIG_ERROR, TRUE, "Error: Service has no hosts and/or service_description (config file '%s', starting on line %d)\n", xodtemplate_config_file_name(temp_service->_config_file), temp_service->_start_line);
+			return ERROR;
+			}
 
 		if(temp_service->hostgroup_name != NULL) {
 			if(xodtemplate_expand_hostgroups(&glist, host_map, temp_service->hostgroup_name, temp_service->_config_file, temp_service->_start_line) == ERROR) {
 				return ERROR;
 				}
-			/* empty result is only bad if allow_empty_hostgroup_assignment is off */
-			if(!glist && !bitmap_count_set_bits(host_map) && allow_empty_hostgroup_assignment == 0) {
-				logit(NSLOG_CONFIG_ERROR, TRUE, "Error: Could not expand hostgroups and/or hosts specified in service (config file '%s', starting on line %d)\n", xodtemplate_config_file_name(temp_service->_config_file), temp_service->_start_line);
-				return ERROR;
-				}
 			/* no longer needed */
 			my_free(temp_service->hostgroup_name);
+
+			/* empty result is only bad if allow_empty_hostgroup_assignment is off */
+			if(!glist && !bitmap_count_set_bits(host_map)) {
+				if(!allow_empty_hostgroup_assignment) {
+					logit(NSLOG_CONFIG_ERROR, TRUE, "Error: Could not expand hostgroups and/or hosts specified in service (config file '%s', starting on line %d)\n", xodtemplate_config_file_name(temp_service->_config_file), temp_service->_start_line);
+					return ERROR;
+					}
+				else if (allow_empty_hostgroup_assignment == 2) {
+					logit(NSLOG_CONFIG_WARNING, TRUE, "Warning: Could not expand hostgroups and/or hosts specified in service (config file '%s', starting on line %d)\n", xodtemplate_config_file_name(temp_service->_config_file), temp_service->_start_line);
+					}
+				}
 			}
 
 		/* now find direct hosts */
@@ -4259,7 +4297,7 @@ int xodtemplate_duplicate_objects(void) {
 	for(temp_serviceescalation = xodtemplate_serviceescalation_list; temp_serviceescalation != NULL; temp_serviceescalation = temp_serviceescalation->next) {
 
 		/* skip serviceescalations without enough data */
-		if(temp_serviceescalation->service_description == NULL && (temp_serviceescalation->host_name == NULL || temp_serviceescalation->hostgroup_name == NULL))
+		if(temp_serviceescalation->servicegroup_name == NULL && temp_serviceescalation->service_description == NULL && (temp_serviceescalation->host_name == NULL || temp_serviceescalation->hostgroup_name == NULL))
 			continue;
 		if(temp_serviceescalation->register_object == FALSE)
 			continue;
@@ -4354,12 +4392,15 @@ int xodtemplate_duplicate_objects(void) {
 		next_se = temp_serviceextinfo->next;
 
 		/* skip definitions without enough data */
-		if(temp_serviceextinfo->hostgroup_name == NULL && temp_serviceextinfo->host_name == NULL)
+		if(temp_serviceextinfo->service_description == NULL || (temp_serviceextinfo->hostgroup_name == NULL && temp_serviceextinfo->host_name == NULL))
 			continue;
 
-		/* get list of hosts */
-		if(xodtemplate_create_service_list(&master_servicelist, service_map, temp_serviceextinfo->hostgroup_name, temp_serviceextinfo->host_name, NULL, temp_serviceextinfo->service_description, temp_serviceextinfo->_config_file, temp_serviceextinfo->_start_line) != OK) {
-			logit(NSLOG_CONFIG_ERROR, TRUE, "Error: Could not expand hostgroups and/or hosts specified in extended service info (config file '%s', starting on line %d)\n", xodtemplate_config_file_name(temp_serviceextinfo->_config_file), temp_serviceextinfo->_start_line);
+		bitmap_clear(service_map);
+		master_servicelist = NULL;
+
+		/* get list of services */
+		if(xodtemplate_create_service_list(&master_servicelist, service_map, temp_serviceextinfo->host_name, temp_serviceextinfo->hostgroup_name, NULL, temp_serviceextinfo->service_description, temp_serviceextinfo->_config_file, temp_serviceextinfo->_start_line) != OK) {
+			logit(NSLOG_CONFIG_ERROR, TRUE, "Error: Could not expand services specified in extended service info (config file '%s', starting on line %d)\n", xodtemplate_config_file_name(temp_serviceextinfo->_config_file), temp_serviceextinfo->_start_line);
 			return ERROR;
 			}
 
@@ -6119,7 +6160,7 @@ int xodtemplate_recombobulate_contactgroups(void) {
 			continue;
 
 		/* we might need this */
-		if(!(temp_contactgroup->reject_map = bitmap_create(xodcount.contacts))) {
+		if(!use_precached_objects && !(temp_contactgroup->reject_map = bitmap_create(xodcount.contacts))) {
 			logit(NSLOG_CONFIG_ERROR, TRUE, "Error: Could not create reject map for contactgroup '%s'", temp_contactgroup->contactgroup_name);
 			return ERROR;
 			}
@@ -6295,7 +6336,7 @@ int xodtemplate_recombobulate_hostgroups(void) {
 			continue;
 
 		/* we might need this */
-		if(!(temp_hostgroup->reject_map = bitmap_create(xodcount.hosts))) {
+		if(!use_precached_objects && !(temp_hostgroup->reject_map = bitmap_create(xodcount.hosts))) {
 			logit(NSLOG_CONFIG_ERROR, TRUE, "Error: Could not create reject map for hostgroup '%s'\n", temp_hostgroup->hostgroup_name);
 			return ERROR;
 			}
@@ -6476,7 +6517,7 @@ int xodtemplate_recombobulate_servicegroups(void) {
 			continue;
 
 		/* we might need this */
-		if(!(temp_servicegroup->reject_map = bitmap_create(xodcount.services))) {
+		if(!use_precached_objects && !(temp_servicegroup->reject_map = bitmap_create(xodcount.services))) {
 			logit(NSLOG_CONFIG_ERROR, TRUE, "Error: Could not create reject map for hostgroup '%s'\n", temp_servicegroup->servicegroup_name);
 			return ERROR;
 			}
@@ -7433,7 +7474,7 @@ int xodtemplate_register_serviceescalation(xodtemplate_serviceescalation *this_s
 	/* add the contact groups */
 	if(this_serviceescalation->contact_groups != NULL) {
 
-		for(contact_group = strtok(this_serviceescalation->contact_groups, ","); contact_group != NULL; contact_group = strtok(NULL, ", ")) {
+		for(contact_group = strtok(this_serviceescalation->contact_groups, ","); contact_group != NULL; contact_group = strtok(NULL, ",")) {
 
 			strip(contact_group);
 			new_contactgroupsmember = add_contactgroup_to_serviceescalation(new_serviceescalation, contact_group);
@@ -7447,7 +7488,7 @@ int xodtemplate_register_serviceescalation(xodtemplate_serviceescalation *this_s
 	/* add the contacts */
 	if(this_serviceescalation->contacts != NULL) {
 
-		for(contact_name = strtok(this_serviceescalation->contacts, ","); contact_name != NULL; contact_name = strtok(NULL, ", ")) {
+		for(contact_name = strtok(this_serviceescalation->contacts, ","); contact_name != NULL; contact_name = strtok(NULL, ",")) {
 
 			strip(contact_name);
 			new_contactsmember = add_contact_to_serviceescalation(new_serviceescalation, contact_name);
@@ -7790,7 +7831,7 @@ int xodtemplate_register_hostescalation(xodtemplate_hostescalation *this_hostesc
 	/* add the contacts */
 	if(this_hostescalation->contacts != NULL) {
 
-		for(contact_name = strtok(this_hostescalation->contacts, ","); contact_name != NULL; contact_name = strtok(NULL, ", ")) {
+		for(contact_name = strtok(this_hostescalation->contacts, ","); contact_name != NULL; contact_name = strtok(NULL, ",")) {
 
 			strip(contact_name);
 			new_contactsmember = add_contact_to_hostescalation(new_hostescalation, contact_name);
@@ -8496,15 +8537,15 @@ int xodtemplate_free_memory(void) {
 		next_contactgroup = this_contactgroup->next;
 		my_free(this_contactgroup->template);
 		my_free(this_contactgroup->name);
-		if (!this_contactgroup->register_object) {
-			my_free(this_contactgroup->contactgroup_name);
-			my_free(this_contactgroup->alias);
-		}
 		my_free(this_contactgroup->members);
 		my_free(this_contactgroup->contactgroup_members);
 		bitmap_destroy(this_contactgroup->member_map);
 		free_objectlist(&this_contactgroup->member_list);
 		free_objectlist(&this_contactgroup->group_list);
+		if (!this_contactgroup->register_object) {
+			my_free(this_contactgroup->contactgroup_name);
+			my_free(this_contactgroup->alias);
+		}
 		my_free(this_contactgroup);
 		}
 	xodtemplate_contactgroup_list = NULL;
@@ -8515,6 +8556,11 @@ int xodtemplate_free_memory(void) {
 		next_hostgroup = this_hostgroup->next;
 		my_free(this_hostgroup->template);
 		my_free(this_hostgroup->name);
+		my_free(this_hostgroup->members);
+		my_free(this_hostgroup->hostgroup_members);
+		bitmap_destroy(this_hostgroup->member_map);
+		free_objectlist(&this_hostgroup->member_list);
+		free_objectlist(&this_hostgroup->group_list);
 		if (!this_hostgroup->register_object) {
 			my_free(this_hostgroup->hostgroup_name);
 			my_free(this_hostgroup->alias);
@@ -8522,11 +8568,6 @@ int xodtemplate_free_memory(void) {
 			my_free(this_hostgroup->notes_url);
 			my_free(this_hostgroup->action_url);
 		}
-		my_free(this_hostgroup->members);
-		my_free(this_hostgroup->hostgroup_members);
-		bitmap_destroy(this_hostgroup->member_map);
-		free_objectlist(&this_hostgroup->member_list);
-		free_objectlist(&this_hostgroup->group_list);
 		my_free(this_hostgroup);
 		}
 	xodtemplate_hostgroup_list = NULL;
@@ -8535,6 +8576,11 @@ int xodtemplate_free_memory(void) {
 	/* free memory allocated to servicegroup list */
 	for(this_servicegroup = xodtemplate_servicegroup_list; this_servicegroup != NULL; this_servicegroup = next_servicegroup) {
 		next_servicegroup = this_servicegroup->next;
+		my_free(this_servicegroup->members);
+		my_free(this_servicegroup->servicegroup_members);
+		bitmap_destroy(this_servicegroup->member_map);
+		free_objectlist(&this_servicegroup->member_list);
+		free_objectlist(&this_servicegroup->group_list);
 		my_free(this_servicegroup->template);
 		my_free(this_servicegroup->name);
 		if (!this_servicegroup->register_object) {
@@ -8544,11 +8590,6 @@ int xodtemplate_free_memory(void) {
 			my_free(this_servicegroup->notes_url);
 			my_free(this_servicegroup->action_url);
 		}
-		my_free(this_servicegroup->members);
-		my_free(this_servicegroup->servicegroup_members);
-		bitmap_destroy(this_servicegroup->member_map);
-		free_objectlist(&this_servicegroup->member_list);
-		free_objectlist(&this_servicegroup->group_list);
 		my_free(this_servicegroup);
 		}
 	xodtemplate_servicegroup_list = NULL;
@@ -8556,15 +8597,7 @@ int xodtemplate_free_memory(void) {
 
 	/* free memory allocated to contact list */
 	for(this_contact = xodtemplate_contact_list; this_contact != NULL; this_contact = next_contact) {
-		if (!this_contact->register_object) {
-			my_free(this_contact->contact_name);
-			my_free(this_contact->alias);
-			my_free(this_contact->email);
-			my_free(this_contact->pager);
-			for (x = 0; x < MAX_XODTEMPLATE_CONTACT_ADDRESSES; x++)
-				my_free(this_contact->address[x]);
-		}
-
+		next_contact = this_contact->next;
 		/* free custom variables */
 		this_customvariablesmember = this_contact->custom_variables;
 		while(this_customvariablesmember != NULL) {
@@ -8574,8 +8607,6 @@ int xodtemplate_free_memory(void) {
 			my_free(this_customvariablesmember);
 			this_customvariablesmember = next_customvariablesmember;
 			}
-
-		next_contact = this_contact->next;
 		my_free(this_contact->template);
 		my_free(this_contact->name);
 		my_free(this_contact->contact_groups);
@@ -8583,6 +8614,14 @@ int xodtemplate_free_memory(void) {
 		my_free(this_contact->service_notification_commands);
 		my_free(this_contact->host_notification_period);
 		my_free(this_contact->host_notification_commands);
+		if (!this_contact->register_object) {
+			my_free(this_contact->contact_name);
+			my_free(this_contact->alias);
+			my_free(this_contact->email);
+			my_free(this_contact->pager);
+			for (x = 0; x < MAX_XODTEMPLATE_CONTACT_ADDRESSES; x++)
+				my_free(this_contact->address[x]);
+			}
 		my_free(this_contact);
 		}
 	xodtemplate_contact_list = NULL;
@@ -8591,21 +8630,6 @@ int xodtemplate_free_memory(void) {
 	/* free memory allocated to host list */
 	for(this_host = xodtemplate_host_list; this_host != NULL; this_host = next_host) {
 		next_host = this_host->next;
-		if (!this_host->register_object) {
-			my_free(this_host->host_name);
-			my_free(this_host->alias);
-			my_free(this_host->display_name);
-			my_free(this_host->address);
-			my_free(this_host->check_command);
-			my_free(this_host->event_handler);
-			my_free(this_host->notes);
-			my_free(this_host->notes_url);
-			my_free(this_host->action_url);
-			my_free(this_host->icon_image);
-			my_free(this_host->icon_image_alt);
-			my_free(this_host->statusmap_image);
-			my_free(this_host->vrml_image);
-			}
 		/* free custom variables */
 		this_customvariablesmember = this_host->custom_variables;
 		while(this_customvariablesmember != NULL) {
@@ -8624,6 +8648,21 @@ int xodtemplate_free_memory(void) {
 		my_free(this_host->contact_groups);
 		my_free(this_host->contacts);
 		my_free(this_host->notification_period);
+		if (!this_host->register_object) {
+			my_free(this_host->host_name);
+			my_free(this_host->alias);
+			my_free(this_host->display_name);
+			my_free(this_host->address);
+			my_free(this_host->check_command);
+			my_free(this_host->event_handler);
+			my_free(this_host->notes);
+			my_free(this_host->notes_url);
+			my_free(this_host->action_url);
+			my_free(this_host->icon_image);
+			my_free(this_host->icon_image_alt);
+			my_free(this_host->statusmap_image);
+			my_free(this_host->vrml_image);
+			}
 		my_free(this_host);
 		}
 	xodtemplate_host_list = NULL;
@@ -8632,9 +8671,12 @@ int xodtemplate_free_memory(void) {
 	/* free memory allocated to service list */
 	for(this_service = xodtemplate_service_list; this_service != NULL; this_service = next_service) {
 		next_service = this_service->next;
+		my_free(this_service->contact_groups);
+		my_free(this_service->contacts);
+		my_free(this_service->service_groups);
 
-		/* free custom variables */
 		if(this_service->is_copy == FALSE || !this_service->register_object) {
+			/* free custom variables */
 			this_customvariablesmember = this_service->custom_variables;
 			while(this_customvariablesmember != NULL) {
 				next_customvariablesmember = this_customvariablesmember->next;
@@ -8647,8 +8689,6 @@ int xodtemplate_free_memory(void) {
 			my_free(this_service->template);
 			my_free(this_service->name);
 			my_free(this_service->display_name);
-			my_free(this_service->hostgroup_name);
-			my_free(this_service->service_description);
 			my_free(this_service->check_command);
 			my_free(this_service->check_period);
 			my_free(this_service->event_handler);
@@ -8658,10 +8698,9 @@ int xodtemplate_free_memory(void) {
 			my_free(this_service->action_url);
 			my_free(this_service->icon_image);
 			my_free(this_service->icon_image_alt);
+			my_free(this_service->hostgroup_name);
+			my_free(this_service->service_description);
 			}
-		my_free(this_service->contact_groups);
-		my_free(this_service->contacts);
-		my_free(this_service->service_groups);
 		my_free(this_service);
 		}
 	xodtemplate_service_list = NULL;
@@ -9423,7 +9462,6 @@ int xodtemplate_expand_services(objectlist **list, bitmap *reject_map, char *hos
 			/* now we have arguments we can handle safely, so do that */
 			if(xodtemplate_expand_services(list, reject_map, p1, p2, _config_file, _start_line) != OK) {
 				free(scopy);
-				free(services);
 				return ERROR;
 				}
 			}

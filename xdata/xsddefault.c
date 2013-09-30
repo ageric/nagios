@@ -30,6 +30,7 @@
 #include "../include/comments.h"
 #include "../include/downtime.h"
 #include "../include/macros.h"
+#include "xsddefault.h"
 
 #ifdef NSCORE
 #include "../include/nagios.h"
@@ -37,15 +38,6 @@
 
 #ifdef NSCGI
 #include "../include/cgiutils.h"
-#endif
-
-
-/**** IMPLEMENTATION SPECIFIC HEADER FILES ****/
-#include "xsddefault.h"
-
-
-
-#ifdef NSCGI
 time_t program_start;
 int daemon_mode;
 time_t last_log_rotation;
@@ -66,153 +58,6 @@ int buffer_stats[1][3];
 int program_stats[MAX_CHECK_STATS_TYPES][3];
 #endif
 
-char *xsddefault_status_log = NULL;
-char *xsddefault_temp_file = NULL; /* XXX: TO BE REMOVED SO DO NOT USE! */
-
-
-
-/******************************************************************/
-/***************** COMMON CONFIG INITIALIZATION  ******************/
-/******************************************************************/
-
-/* grab configuration information */
-int xsddefault_grab_config_info(const char *cfgfile) {
-	char *input = NULL;
-	mmapfile *thefile;
-#ifdef NSCGI
-	char *input2 = NULL;
-	mmapfile *thefile2;
-	char *temp_buffer;
-#else
-	nagios_macros *mac;
-#endif
-
-
-	/*** CORE PASSES IN MAIN CONFIG FILE, CGIS PASS IN CGI CONFIG FILE! ***/
-
-	/* open the config file for reading */
-	if((thefile = mmap_fopen(cfgfile)) == NULL)
-		return ERROR;
-
-	/* read in all lines from the main config file */
-	while(1) {
-
-		/* free memory */
-		my_free(input);
-
-		/* read the next line */
-		if((input = mmap_fgets_multiline(thefile)) == NULL)
-			break;
-
-		strip(input);
-
-		/* skip blank lines and comments */
-		if(input[0] == '#' || input[0] == '\x0')
-			continue;
-
-#ifdef NSCGI
-		/* CGI needs to find and read contents of main config file, since it was passed the name of the CGI config file */
-		if(strstr(input, "main_config_file") == input) {
-
-			temp_buffer = strtok(input, "=");
-			temp_buffer = strtok(NULL, "\n");
-			if(temp_buffer == NULL)
-				continue;
-
-			if((thefile2 = mmap_fopen(temp_buffer)) == NULL)
-				continue;
-
-			/* read in all lines from the main config file */
-			while(1) {
-
-				/* free memory */
-				my_free(input2);
-
-				/* read the next line */
-				if((input2 = mmap_fgets_multiline(thefile2)) == NULL)
-					break;
-
-				strip(input2);
-
-				/* skip blank lines and comments */
-				if(input2[0] == '#' || input2[0] == '\x0')
-					continue;
-
-				xsddefault_grab_config_directives(input2);
-				}
-
-			/* free memory and close the file */
-			my_free(input2);
-			mmap_fclose(thefile2);
-			}
-#endif
-
-#ifdef NSCORE
-		/* core reads variables directly from the main config file */
-		xsddefault_grab_config_directives(input);
-#endif
-		}
-
-	/* free memory and close the file */
-	my_free(input);
-	mmap_fclose(thefile);
-
-	/* initialize locations if necessary */
-	if(xsddefault_status_log == NULL)
-		xsddefault_status_log = (char *)strdup(DEFAULT_STATUS_FILE);
-
-	/* make sure we have what we need */
-	if(xsddefault_status_log == NULL)
-		return ERROR;
-
-#ifdef NSCORE
-	mac = get_global_macros();
-	/* save the status file macro */
-	my_free(mac->x[MACRO_STATUSDATAFILE]);
-	if((mac->x[MACRO_STATUSDATAFILE] = (char *)strdup(xsddefault_status_log)))
-		strip(mac->x[MACRO_STATUSDATAFILE]);
-#endif
-
-	return OK;
-	}
-
-
-/* processes a single directive */
-int xsddefault_grab_config_directives(char *input) {
-	char *temp_ptr = NULL;
-	char *varname = NULL;
-	char *varvalue = NULL;
-
-	/* get the variable name */
-	if((temp_ptr = my_strtok(input, "=")) == NULL)
-		return ERROR;
-	if((varname = (char *)strdup(temp_ptr)) == NULL)
-		return ERROR;
-
-	/* get the variable value */
-	if((temp_ptr = my_strtok(NULL, "\n")) == NULL) {
-		my_free(varname);
-		return ERROR;
-		}
-	if((varvalue = (char *)strdup(temp_ptr)) == NULL) {
-		my_free(varname);
-		return ERROR;
-		}
-
-	/* status log definition */
-	if(!strcmp(varname, "status_file") || !strcmp(varname, "xsddefault_status_log")) {
-		xsddefault_status_log = nspath_absolute(temp_ptr, config_file_dir);
-		}
-
-	/* free memory */
-	my_free(varname);
-	my_free(varvalue);
-
-	return OK;
-	}
-
-
-
 #ifdef NSCORE
 
 /******************************************************************/
@@ -222,19 +67,25 @@ int xsddefault_grab_config_directives(char *input) {
 
 /* initialize status data */
 int xsddefault_initialize_status_data(const char *cfgfile) {
-	int result;
+	nagios_macros *mac;
 
-	/* use the global already-parsed temp_file for this */
-	xsddefault_temp_file = temp_file;
+	/* initialize locations if necessary */
+	if(!status_file)
+		status_file = (char *)strdup(DEFAULT_STATUS_FILE);
 
-	/* grab configuration data */
-	result = xsddefault_grab_config_info(cfgfile);
-	if(result == ERROR)
+	/* make sure we have what we need */
+	if(status_file == NULL)
 		return ERROR;
 
+	mac = get_global_macros();
+	/* save the status file macro */
+	my_free(mac->x[MACRO_STATUSDATAFILE]);
+	if((mac->x[MACRO_STATUSDATAFILE] = (char *)strdup(status_file)))
+		strip(mac->x[MACRO_STATUSDATAFILE]);
+
 	/* delete the old status log (it might not exist) */
-	if(xsddefault_status_log)
-		unlink(xsddefault_status_log);
+	if(status_file)
+		unlink(status_file);
 
 	return OK;
 	}
@@ -244,13 +95,13 @@ int xsddefault_initialize_status_data(const char *cfgfile) {
 int xsddefault_cleanup_status_data(int delete_status_data) {
 
 	/* delete the status log */
-	if(delete_status_data == TRUE && xsddefault_status_log) {
-		if(unlink(xsddefault_status_log))
+	if(delete_status_data == TRUE && status_file) {
+		if(unlink(status_file))
 			return ERROR;
 		}
 
 	/* free memory */
-	my_free(xsddefault_status_log);
+	my_free(status_file);
 
 	return OK;
 	}
@@ -277,7 +128,7 @@ int xsddefault_save_status_data(void) {
 	log_debug_info(DEBUGL_FUNCTIONS, 0, "save_status_data()\n");
 
 	/* users may not want us to write status data */
-	if(!xsddefault_status_log || !strcmp(xsddefault_status_log, "/dev/null"))
+	if(!status_file || !strcmp(status_file, "/dev/null"))
 		return OK;
 
 	asprintf(&tmp_log, "%sXXXXXX", temp_file);
@@ -599,9 +450,9 @@ int xsddefault_save_status_data(void) {
 		result = OK;
 
 		/* move the temp file to the status log (overwrite the old status log) */
-		if(my_rename(tmp_log, xsddefault_status_log)) {
+		if(my_rename(tmp_log, status_file)) {
 			unlink(tmp_log);
-			logit(NSLOG_RUNTIME_ERROR, TRUE, "Error: Unable to update status data file '%s': %s", xsddefault_status_log, strerror(errno));
+			logit(NSLOG_RUNTIME_ERROR, TRUE, "Error: Unable to update status data file '%s': %s", status_file, strerror(errno));
 			result = ERROR;
 			}
 		}
@@ -647,7 +498,6 @@ int xsddefault_read_status_data(const char *cfgfile, int options) {
 	char *var = NULL;
 	char *val = NULL;
 	char *ptr = NULL;
-	int result = 0;
 	/* comment and downtime vars */
 	unsigned long comment_id = 0;
 	int persistent = FALSE;
@@ -679,17 +529,12 @@ int xsddefault_read_status_data(const char *cfgfile, int options) {
 		program_stats[x][2] = 0;
 		}
 
-	/* grab configuration data */
-	result = xsddefault_grab_config_info(cfgfile);
-	if(result == ERROR)
-		return ERROR;
-
 	/* open the status file for reading */
 #ifdef NO_MMAP
-	if((fp = fopen(xsddefault_status_log, "r")) == NULL)
+	if((fp = fopen(status_file, "r")) == NULL)
 		return ERROR;
 #else
-	if((thefile = mmap_fopen(xsddefault_status_log)) == NULL)
+	if((thefile = mmap_fopen(status_file)) == NULL)
 		return ERROR;
 #endif
 
@@ -997,8 +842,11 @@ int xsddefault_read_status_data(const char *cfgfile, int options) {
 							temp_hoststatus->is_flapping = (atoi(val) > 0) ? TRUE : FALSE;
 						else if(!strcmp(var, "percent_state_change"))
 							temp_hoststatus->percent_state_change = strtod(val, NULL);
-						else if(!strcmp(var, "scheduled_downtime_depth"))
+						else if(!strcmp(var, "scheduled_downtime_depth")) {
 							temp_hoststatus->scheduled_downtime_depth = atoi(val);
+							if (temp_hoststatus->scheduled_downtime_depth < 0)
+								temp_hoststatus->scheduled_downtime_depth = 0;
+							}
 						}
 					break;
 
@@ -1089,8 +937,11 @@ int xsddefault_read_status_data(const char *cfgfile, int options) {
 							temp_servicestatus->is_flapping = (atoi(val) > 0) ? TRUE : FALSE;
 						else if(!strcmp(var, "percent_state_change"))
 							temp_servicestatus->percent_state_change = strtod(val, NULL);
-						else if(!strcmp(var, "scheduled_downtime_depth"))
+						else if(!strcmp(var, "scheduled_downtime_depth")) {
 							temp_servicestatus->scheduled_downtime_depth = atoi(val);
+							if (temp_servicestatus->scheduled_downtime_depth < 0)
+								temp_servicestatus->scheduled_downtime_depth = 0;
+							}
 						}
 					break;
 
@@ -1174,7 +1025,7 @@ int xsddefault_read_status_data(const char *cfgfile, int options) {
 #endif
 
 	/* free memory */
-	my_free(xsddefault_status_log);
+	my_free(status_file);
 
 	if(sort_downtime() != OK)
 		return ERROR;

@@ -66,6 +66,9 @@ int             enable_splunk_integration = FALSE;
 char            *splunk_url = NULL;
 int             lock_author_names = TRUE;
 
+int             navbar_search_addresses = TRUE;
+int             navbar_search_aliases = TRUE;
+
 time_t          this_scheduled_log_rotation = 0L;
 time_t          last_scheduled_log_rotation = 0L;
 time_t          next_scheduled_log_rotation = 0L;
@@ -405,6 +408,12 @@ int read_cgi_config_file(const char *filename) {
 
 		else if(!strcmp(var, "use_ssl_authentication"))
 			use_ssl_authentication = (atoi(val) > 0) ? TRUE : FALSE;
+
+		else if(!strcmp(var, "navbar_search_addresses"))
+			navbar_search_addresses = (atoi(val) > 0) ? TRUE : FALSE;
+
+		else if(!strcmp(var, "navbar_search_aliases"))
+			navbar_search_aliases = (atoi(val) > 0) ? TRUE : FALSE;
 		}
 
 	for(p = illegal_output_chars; p && *p; p++)
@@ -462,6 +471,11 @@ int read_main_config_file(const char *filename) {
 			temp_buffer = strtok(input, "=");
 			temp_buffer = strtok(NULL, "\x0");
 			object_cache_file = nspath_absolute(temp_buffer, config_file_dir);
+			}
+		else if(strstr(input, "status_file=") == input) {
+			temp_buffer = strtok(input, "=");
+			temp_buffer = strtok(NULL, "\x0");
+			status_file = nspath_absolute(temp_buffer, config_file_dir);
 			}
 
 		else if(strstr(input, "log_archive_path=") == input) {
@@ -567,6 +581,48 @@ int read_all_status_data(const char *cfgfile, int options) {
 		service_status_has_been_read = TRUE;
 
 	return result;
+	}
+
+
+void cgi_init(void (*doc_header)(int), void (*doc_footer)(void), int object_options, int status_options) {
+	int result;
+
+	/* read the CGI configuration file */
+	result = read_cgi_config_file(get_cgi_config_location());
+	if(result == ERROR) {
+		doc_header(FALSE);
+		cgi_config_file_error(get_cgi_config_location());
+		doc_footer();
+		exit(EXIT_FAILURE);
+		}
+
+	/* read the main configuration file */
+	result = read_main_config_file(main_config_file);
+	if(result == ERROR) {
+		doc_header(FALSE);
+		main_config_file_error(main_config_file);
+		doc_footer();
+		exit(EXIT_FAILURE);
+		}
+
+	/* read all object configuration data */
+	result = read_all_object_configuration_data(main_config_file, object_options);
+	if(result == ERROR) {
+		doc_header(FALSE);
+		object_data_error();
+		doc_footer();
+		exit(EXIT_FAILURE);
+		}
+
+	/* read all status data */
+	result = read_all_status_data(main_config_file, status_options);
+	if(result == ERROR) {
+		doc_header(FALSE);
+		status_data_error();
+		doc_footer();
+		free_memory();
+		exit(EXIT_FAILURE);
+		}
 	}
 
 
@@ -938,7 +994,7 @@ char * html_encode(char *input, int escape_newlines) {
 	char		mbtemp[ 10];
 	int			wctomb_result;
 	int			x;
-	char		temp_expansion[10];
+	char		temp_expansion[11];
 
 	/* we need up to six times the space to do the conversion */
 	len = (int)strlen(input);
@@ -958,7 +1014,7 @@ char * html_encode(char *input, int escape_newlines) {
 		}
 
 	/* Process all converted characters */
-	for( x = 0, inwcp = wcinput; x < mbstowcs_result && '\0' != *inwcp; x++, inwcp++) {
+	for( x = 0, inwcp = wcinput; x < (int)mbstowcs_result && '\0' != *inwcp; x++, inwcp++) {
 
 		/* Most ASCII characters don't get encoded */
 		if(( *inwcp  >= 0x20 && *inwcp <= 0x7e) &&
@@ -1024,9 +1080,9 @@ char * html_encode(char *input, int escape_newlines) {
 
 		/* for simplicity, all other chars represented by their numeric value */
 		else {
-			sprintf( temp_expansion, "&#%u", *( unsigned int *)inwcp);
+			sprintf( temp_expansion, "&#%u;", *( unsigned int *)inwcp);
 			if((( outstp - encoded_html_string) + strlen( temp_expansion)) <
-					output_max) {
+					(unsigned int)output_max) {
 				strncpy( outstp, temp_expansion, strlen( temp_expansion));
 				outstp += strlen( temp_expansion);
 				}
@@ -1073,7 +1129,7 @@ char *escape_string(const char *input) {
 	char		mbtemp[ 10];
 	int			wctomb_result;
 	char		*stp;
-	char		temp_expansion[10];
+	char		temp_expansion[11];
 
 	/* If they don't give us anything to do... */
 	if( NULL == input) {
@@ -1123,9 +1179,9 @@ char *escape_string(const char *input) {
 
 		/* Encode everything else (this may be excessive) */
 		else {
-			sprintf( temp_expansion, "&#%u", ( unsigned int)wctemp[ 0]);
+			sprintf( temp_expansion, "&#%u;", ( unsigned int)wctemp[ 0]);
 			if((( stp - encoded_html_string) + strlen( temp_expansion)) <
-					output_max) {
+					(unsigned int)output_max) {
 				strncpy( stp, temp_expansion, strlen( temp_expansion));
 				stp += strlen( temp_expansion);
 				}
@@ -1311,7 +1367,7 @@ void display_info_table(const char *title, int refresh, authdata *current_authda
 	int result;
 
 	/* read program status */
-	result = read_all_status_data(get_cgi_config_location(), READ_PROGRAM_STATUS);
+	result = read_all_status_data(main_config_file, READ_PROGRAM_STATUS);
 
 	printf("<TABLE CLASS='infoBox' BORDER=1 CELLSPACING=0 CELLPADDING=0>\n");
 	printf("<TR><TD CLASS='infoBox'>\n");

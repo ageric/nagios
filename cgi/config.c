@@ -109,7 +109,6 @@ static void print_expand_input(int type) {
 	}
 
 int main(void) {
-	int result = OK;
 	mac = get_global_macros();
 
 	/* get the arguments passed in the URL */
@@ -118,32 +117,7 @@ int main(void) {
 	/* reset internal variables */
 	reset_cgi_vars();
 
-	/* read the CGI configuration file */
-	result = read_cgi_config_file(get_cgi_config_location());
-	if(result == ERROR) {
-		document_header(FALSE);
-		cgi_config_file_error(get_cgi_config_location());
-		document_footer();
-		return ERROR;
-		}
-
-	/* read the main configuration file */
-	result = read_main_config_file(main_config_file);
-	if(result == ERROR) {
-		document_header(FALSE);
-		main_config_file_error(main_config_file);
-		document_footer();
-		return ERROR;
-		}
-
-	/* read all object configuration data */
-	result = read_all_object_configuration_data(main_config_file, READ_ALL_OBJECT_DATA);
-	if(result == ERROR) {
-		document_header(FALSE);
-		object_data_error();
-		document_footer();
-		return ERROR;
-		}
+	cgi_init(document_header, document_footer, READ_ALL_OBJECT_DATA, 0);
 
 	/* initialize macros */
 	init_macros();
@@ -451,7 +425,7 @@ void display_hosts(void) {
 	int odd = 0;
 	char time_string[16];
 	const char *bg_class = "";
-	int contact = 0;
+	int num_contacts = 0;
 
 	/* see if user is authorized to view host information... */
 	if(is_authorized_for_configuration_information(&current_authdata) == FALSE) {
@@ -581,21 +555,21 @@ void display_hosts(void) {
 			printf("<TD CLASS='%s'>", bg_class);
 
 			/* find all the contacts for this host... */
-			contact = 0;
+			num_contacts = 0;
 			for(temp_contactsmember = temp_host->contacts; temp_contactsmember != NULL; temp_contactsmember = temp_contactsmember->next) {
-				contact++;
-				if(contact > 1)
+				num_contacts++;
+				if(num_contacts > 1)
 					printf(", ");
 
 				printf("<A HREF='%s?type=contacts&expand=%s'>%s</A>\n", CONFIG_CGI, url_encode(temp_contactsmember->contact_name), html_encode(temp_contactsmember->contact_name, FALSE));
 				}
 			for(temp_contactgroupsmember = temp_host->contact_groups; temp_contactgroupsmember != NULL; temp_contactgroupsmember = temp_contactgroupsmember->next) {
-				contact++;
-				if(contact > 1)
+				num_contacts++;
+				if(num_contacts > 1)
 					printf(", ");
 				printf("<A HREF='%s?type=contactgroups&expand=%s'>%s</A>\n", CONFIG_CGI, url_encode(temp_contactgroupsmember->group_name), html_encode(temp_contactgroupsmember->group_name, FALSE));
 				}
-			if(contact == 0)
+			if(num_contacts == 0)
 				printf("&nbsp;");
 			printf("</TD>\n");
 
@@ -1185,7 +1159,7 @@ void display_services(void) {
 	int odd = 0;
 	char time_string[16];
 	const char *bg_class;
-	int contact = 0;
+	int num_contacts = 0;
 
 
 	/* see if user is authorized to view service information... */
@@ -1308,20 +1282,20 @@ void display_services(void) {
 			printf("</TD>\n");
 
 			printf("<TD CLASS='%s'>", bg_class);
-			contact = 0;
+			num_contacts = 0;
 			for(temp_contactsmember = temp_service->contacts; temp_contactsmember != NULL; temp_contactsmember = temp_contactsmember->next) {
-				contact++;
-				if(contact > 1)
+				num_contacts++;
+				if(num_contacts > 1)
 					printf(", ");
 				printf("<A HREF='%s?type=contacts&expand=%s'>%s</A>", CONFIG_CGI, url_encode(temp_contactsmember->contact_name), html_encode(temp_contactsmember->contact_name, FALSE));
 				}
 			for(temp_contactgroupsmember = temp_service->contact_groups; temp_contactgroupsmember != NULL; temp_contactgroupsmember = temp_contactgroupsmember->next) {
-				contact++;
-				if(contact > 1)
+				num_contacts++;
+				if(num_contacts > 1)
 					printf(", ");
 				printf("<A HREF='%s?type=contactgroups&expand=%s'>%s</A>\n", CONFIG_CGI, url_encode(temp_contactgroupsmember->group_name), html_encode(temp_contactgroupsmember->group_name, FALSE));
 				}
-			if(contact == 0)
+			if(num_contacts == 0)
 				printf("&nbsp;");
 			printf("</TD>\n");
 
@@ -1846,7 +1820,7 @@ void display_serviceescalations(void) {
 	int options = FALSE;
 	int odd = 0;
 	const char *bg_class = "";
-	int contact = 0;
+	int num_contacts = 0;
 	unsigned int i;
 
 	/* see if user is authorized to view hostgroup information... */
@@ -1899,20 +1873,20 @@ void display_serviceescalations(void) {
 		printf("%s'>%s</A></TD>\n", url_encode(temp_se->description), html_encode(temp_se->description, FALSE));
 
 		printf("<TD CLASS='%s'>", bg_class);
-		contact = 0;
+		num_contacts = 0;
 		for(temp_contactsmember = temp_se->contacts; temp_contactsmember != NULL; temp_contactsmember = temp_contactsmember->next) {
-			contact++;
-			if(contact > 1)
+			num_contacts++;
+			if(num_contacts > 1)
 				printf(", ");
 			printf("<A HREF='%s?type=contacts&expand=%s'>%s</A>\n", CONFIG_CGI, url_encode(temp_contactsmember->contact_name), html_encode(temp_contactsmember->contact_name, FALSE));
 			}
 		for(temp_contactgroupsmember = temp_se->contact_groups; temp_contactgroupsmember != NULL; temp_contactgroupsmember = temp_contactgroupsmember->next) {
-			contact++;
-			if(contact > 1)
+			num_contacts++;
+			if(num_contacts > 1)
 				printf(", ");
 			printf("<A HREF='%s?type=contactgroups&expand=%s'>%s</A>\n", CONFIG_CGI, url_encode(temp_contactgroupsmember->group_name), html_encode(temp_contactgroupsmember->group_name, FALSE));
 			}
-		if(contact == 0)
+		if(num_contacts == 0)
 			printf("&nbsp;");
 		printf("</TD>\n");
 
@@ -2070,7 +2044,7 @@ void display_hostescalations(void) {
 	int options = FALSE;
 	int odd = 0;
 	const char *bg_class = "";
-	int contact = 0;
+	int num_contacts = 0;
 	unsigned int i;
 
 	/* see if user is authorized to view hostgroup information... */
@@ -2116,20 +2090,20 @@ void display_hostescalations(void) {
 		printf("<TD CLASS='%s'><A HREF='%s?type=hosts&expand=%s'>%s</A></TD>", bg_class, CONFIG_CGI, url_encode(temp_he->host_name), html_encode(temp_he->host_name, FALSE));
 
 		printf("<TD CLASS='%s'>", bg_class);
-		contact = 0;
+		num_contacts = 0;
 		for(temp_contactsmember = temp_he->contacts; temp_contactsmember != NULL; temp_contactsmember = temp_contactsmember->next) {
-			contact++;
-			if(contact > 1)
+			num_contacts++;
+			if(num_contacts > 1)
 				printf(", ");
 			printf("<A HREF='%s?type=contacts&expand=%s'>%s</A>\n", CONFIG_CGI, url_encode(temp_contactsmember->contact_name), html_encode(temp_contactsmember->contact_name, FALSE));
 			}
 		for(temp_contactgroupsmember = temp_he->contact_groups; temp_contactgroupsmember != NULL; temp_contactgroupsmember = temp_contactgroupsmember->next) {
-			contact++;
-			if(contact > 1)
+			num_contacts++;
+			if(num_contacts > 1)
 				printf(", ");
 			printf("<A HREF='%s?type=contactgroups&expand=%s'>%s</A>\n", CONFIG_CGI, url_encode(temp_contactgroupsmember->group_name), html_encode(temp_contactgroupsmember->group_name, FALSE));
 			}
-		if(contact == 0)
+		if(num_contacts == 0)
 			printf("&nbsp;");
 		printf("</TD>\n");
 
@@ -2381,7 +2355,7 @@ void display_command_expansion(void) {
 							else if((*c) == '\v')	printf("[VT]");
 							else			printf("[0x%x]", *c);
 						printf("</FONT><FONT COLOR='%s'>", hash_color(i));
-						for(; c && ((*c) != '\0') && (j < strlen(command_args[i]) - trail_space[i]); c++, j++) putchar(*c);
+						for(; c && ((*c) != '\0') && (j < (int)strlen(command_args[i]) - trail_space[i]); c++, j++) putchar(*c);
 						printf("</FONT><FONT COLOR='#0000FF'>");
 						for(; c && ((*c) != '\0'); c++)
 							/* TODO: As long as the hyperlinks change all whitespace into actual spaces,

@@ -109,7 +109,6 @@ int display_header = TRUE;
 
 
 int main(void) {
-	int result = OK;
 	int found = FALSE;
 	char temp_buffer[MAX_INPUT_BUFFER] = "";
 	char *processed_string = NULL;
@@ -127,42 +126,7 @@ int main(void) {
 	/* reset internal variables */
 	reset_cgi_vars();
 
-	/* read the CGI configuration file */
-	result = read_cgi_config_file(get_cgi_config_location());
-	if(result == ERROR) {
-		document_header(FALSE);
-		cgi_config_file_error(get_cgi_config_location());
-		document_footer();
-		return ERROR;
-		}
-
-	/* read the main configuration file */
-	result = read_main_config_file(main_config_file);
-	if(result == ERROR) {
-		document_header(FALSE);
-		main_config_file_error(main_config_file);
-		document_footer();
-		return ERROR;
-		}
-
-	/* read all object configuration data */
-	result = read_all_object_configuration_data(main_config_file, READ_ALL_OBJECT_DATA);
-	if(result == ERROR) {
-		document_header(FALSE);
-		object_data_error();
-		document_footer();
-		return ERROR;
-		}
-
-	/* read all status data */
-	result = read_all_status_data(get_cgi_config_location(), READ_ALL_STATUS_DATA);
-	if(result == ERROR) {
-		document_header(FALSE);
-		status_data_error();
-		document_footer();
-		free_memory();
-		return ERROR;
-		}
+	cgi_init(document_header, document_footer, READ_ALL_OBJECT_DATA, READ_ALL_STATUS_DATA);
 
 	/* initialize macros */
 	init_macros();
@@ -3017,7 +2981,7 @@ int compare_sortdata_entries(int s_type, int s_option, sortdata *new_sortdata, s
 	time_t next_check[2];
 	int current_attempt[2];
 	int status[2];
-	char *host_name[2];
+	char *hname[2];
 	char *service_description[2];
 
 	if(new_sortdata->is_service == TRUE) {
@@ -3025,7 +2989,7 @@ int compare_sortdata_entries(int s_type, int s_option, sortdata *new_sortdata, s
 		last_check[0] = temp_svcstatus->last_check;
 		next_check[0] = temp_svcstatus->next_check;
 		status[0] = temp_svcstatus->status;
-		host_name[0] = temp_svcstatus->host_name;
+		hname[0] = temp_svcstatus->host_name;
 		service_description[0] = temp_svcstatus->description;
 		current_attempt[0] = temp_svcstatus->current_attempt;
 		}
@@ -3034,7 +2998,7 @@ int compare_sortdata_entries(int s_type, int s_option, sortdata *new_sortdata, s
 		last_check[0] = temp_hststatus->last_check;
 		next_check[0] = temp_hststatus->next_check;
 		status[0] = temp_hststatus->status;
-		host_name[0] = temp_hststatus->host_name;
+		hname[0] = temp_hststatus->host_name;
 		service_description[0] = "";
 		current_attempt[0] = temp_hststatus->current_attempt;
 		}
@@ -3043,7 +3007,7 @@ int compare_sortdata_entries(int s_type, int s_option, sortdata *new_sortdata, s
 		last_check[1] = temp_svcstatus->last_check;
 		next_check[1] = temp_svcstatus->next_check;
 		status[1] = temp_svcstatus->status;
-		host_name[1] = temp_svcstatus->host_name;
+		hname[1] = temp_svcstatus->host_name;
 		service_description[1] = temp_svcstatus->description;
 		current_attempt[1] = temp_svcstatus->current_attempt;
 		}
@@ -3052,7 +3016,7 @@ int compare_sortdata_entries(int s_type, int s_option, sortdata *new_sortdata, s
 		last_check[1] = temp_hststatus->last_check;
 		next_check[1] = temp_hststatus->next_check;
 		status[1] = temp_hststatus->status;
-		host_name[1] = temp_hststatus->host_name;
+		hname[1] = temp_hststatus->host_name;
 		service_description[1] = "";
 		current_attempt[1] = temp_hststatus->current_attempt;
 		}
@@ -3084,7 +3048,7 @@ int compare_sortdata_entries(int s_type, int s_option, sortdata *new_sortdata, s
 				return FALSE;
 			}
 		else if(s_option == SORT_HOSTNAME) {
-			if(strcasecmp(host_name[0], host_name[1]) < 0)
+			if(strcasecmp(hname[0], hname[1]) < 0)
 				return TRUE;
 			else
 				return FALSE;
@@ -3122,7 +3086,7 @@ int compare_sortdata_entries(int s_type, int s_option, sortdata *new_sortdata, s
 				return FALSE;
 			}
 		else if(s_option == SORT_HOSTNAME) {
-			if(strcasecmp(host_name[0], host_name[1]) > 0)
+			if(strcasecmp(hname[0], hname[1]) > 0)
 				return TRUE;
 			else
 				return FALSE;

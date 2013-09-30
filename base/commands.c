@@ -132,7 +132,7 @@ int shutdown_command_file_worker(void) {
 
 
 static int command_input_handler(int sd, int events, void *discard) {
-	int ret;
+	int ret, cmd_ret;
 	char *buf;
 	unsigned long size;
 
@@ -150,7 +150,10 @@ static int command_input_handler(int sd, int events, void *discard) {
 			buf[size] = 0;
 			log_debug_info(DEBUGL_COMMANDS, 1, "Read raw external command '%s'\n", buf);
 			}
-		process_external_command1(buf);
+		if ((cmd_ret = process_external_command1(buf)) != CMD_ERROR_OK) {
+			logit(NSLOG_EXTERNAL_COMMAND | NSLOG_RUNTIME_WARNING, TRUE, "External command error: %s\n", cmd_error_strerror(cmd_ret));
+			}
+
 		}
 	return 0;
 	}
@@ -359,11 +362,12 @@ int process_external_command1(char *cmd) {
 	time_t entry_time = 0L;
 	int command_type = CMD_NONE;
 	char *temp_ptr = NULL;
+	int external_command_ret = OK;
 
 	log_debug_info(DEBUGL_FUNCTIONS, 0, "process_external_command1()\n");
 
 	if(cmd == NULL)
-		return ERROR;
+		return CMD_ERROR_MALFORMED_COMMAND;
 
 	/* strip the command of newlines and carriage returns */
 	strip(cmd);
@@ -372,16 +376,16 @@ int process_external_command1(char *cmd) {
 
 	/* get the command entry time */
 	if((temp_ptr = my_strtok(cmd, "[")) == NULL)
-		return ERROR;
+		return CMD_ERROR_MALFORMED_COMMAND;
 	if((temp_ptr = my_strtok(NULL, "]")) == NULL)
-		return ERROR;
+		return CMD_ERROR_MALFORMED_COMMAND;
 	entry_time = (time_t)strtoul(temp_ptr, NULL, 10);
 
 	/* get the command identifier */
 	if((temp_ptr = my_strtok(NULL, ";")) == NULL)
-		return ERROR;
+		return CMD_ERROR_MALFORMED_COMMAND;
 	if((command_id = (char *)strdup(temp_ptr + 1)) == NULL)
-		return ERROR;
+		return CMD_ERROR_INTERNAL_ERROR;
 
 	/* get the command arguments */
 	if((temp_ptr = my_strtok(NULL, "\n")) == NULL)
@@ -390,7 +394,7 @@ int process_external_command1(char *cmd) {
 		args = (char *)strdup(temp_ptr);
 	if(args == NULL) {
 		my_free(command_id);
-		return ERROR;
+		return CMD_ERROR_INTERNAL_ERROR;
 		}
 
 	/* decide what type of command this is... */
@@ -852,7 +856,7 @@ int process_external_command1(char *cmd) {
 		my_free(command_id);
 		my_free(args);
 
-		return ERROR;
+		return CMD_ERROR_UNKNOWN_COMMAND;
 		}
 
 	/* update statistics for external commands */
@@ -877,7 +881,11 @@ int process_external_command1(char *cmd) {
 #endif
 
 	/* process the command */
-	process_external_command2(command_type, entry_time, args);
+	external_command_ret = (process_external_command2(command_type, entry_time, args) == OK) ? CMD_ERROR_OK : CMD_ERROR_FAILURE;
+	if (external_command_ret != CMD_ERROR_OK) {
+			logit(NSLOG_EXTERNAL_COMMAND | NSLOG_RUNTIME_WARNING, TRUE, "Error: External command failed -> %s;%s\n", command_id, args);
+	}
+
 
 #ifdef USE_EVENT_BROKER
 	/* send data to event broker */
@@ -888,14 +896,29 @@ int process_external_command1(char *cmd) {
 	my_free(command_id);
 	my_free(args);
 
-	return OK;
+	return external_command_ret;
 	}
 
-
+const char *cmd_error_strerror(int code) {
+	switch(code) {
+		case CMD_ERROR_OK:
+			return "No error";
+		case CMD_ERROR_FAILURE:
+			return "Command failed";
+		case CMD_ERROR_INTERNAL_ERROR:
+			return "Internal error";
+		case CMD_ERROR_UNKNOWN_COMMAND:
+			return "Unknown or unsupported command";
+		case CMD_ERROR_MALFORMED_COMMAND:
+			return "Malformed command";
+		}
+	return "Unknown error";
+	}
 
 /* top-level processor for a single external command */
 int process_external_command2(int cmd, time_t entry_time, char *args) {
 
+	int ret = OK;
 	log_debug_info(DEBUGL_FUNCTIONS, 0, "process_external_command2()\n");
 
 	log_debug_info(DEBUGL_EXTERNALCOMMANDS, 1, "External Command Type: %d\n", cmd);
@@ -911,15 +934,15 @@ int process_external_command2(int cmd, time_t entry_time, char *args) {
 
 		case CMD_SHUTDOWN_PROCESS:
 		case CMD_RESTART_PROCESS:
-			cmd_signal_process(cmd, args);
+			ret = cmd_signal_process(cmd, args);
 			break;
 
 		case CMD_SAVE_STATE_INFORMATION:
-			save_state_information(FALSE);
+			ret = save_state_information(FALSE);
 			break;
 
 		case CMD_READ_STATE_INFORMATION:
-			read_initial_state_information();
+			ret = read_initial_state_information();
 			break;
 
 		case CMD_ENABLE_NOTIFICATIONS:
@@ -1045,7 +1068,7 @@ int process_external_command2(int cmd, time_t entry_time, char *args) {
 		case CMD_STOP_OBSESSING_OVER_HOST:
 		case CMD_SET_HOST_NOTIFICATION_NUMBER:
 		case CMD_SEND_CUSTOM_HOST_NOTIFICATION:
-			process_host_command(cmd, entry_time, args);
+			ret = process_host_command(cmd, entry_time, args);
 			break;
 
 
@@ -1065,7 +1088,7 @@ int process_external_command2(int cmd, time_t entry_time, char *args) {
 		case CMD_DISABLE_HOSTGROUP_SVC_CHECKS:
 		case CMD_ENABLE_HOSTGROUP_PASSIVE_SVC_CHECKS:
 		case CMD_DISABLE_HOSTGROUP_PASSIVE_SVC_CHECKS:
-			process_hostgroup_command(cmd, entry_time, args);
+			ret = process_hostgroup_command(cmd, entry_time, args);
 			break;
 
 
@@ -1087,7 +1110,7 @@ int process_external_command2(int cmd, time_t entry_time, char *args) {
 		case CMD_STOP_OBSESSING_OVER_SVC:
 		case CMD_SET_SVC_NOTIFICATION_NUMBER:
 		case CMD_SEND_CUSTOM_SVC_NOTIFICATION:
-			process_service_command(cmd, entry_time, args);
+			ret = process_service_command(cmd, entry_time, args);
 			break;
 
 
@@ -1107,7 +1130,7 @@ int process_external_command2(int cmd, time_t entry_time, char *args) {
 		case CMD_DISABLE_SERVICEGROUP_SVC_CHECKS:
 		case CMD_ENABLE_SERVICEGROUP_PASSIVE_SVC_CHECKS:
 		case CMD_DISABLE_SERVICEGROUP_PASSIVE_SVC_CHECKS:
-			process_servicegroup_command(cmd, entry_time, args);
+			ret = process_servicegroup_command(cmd, entry_time, args);
 			break;
 
 
@@ -1119,7 +1142,7 @@ int process_external_command2(int cmd, time_t entry_time, char *args) {
 		case CMD_DISABLE_CONTACT_HOST_NOTIFICATIONS:
 		case CMD_ENABLE_CONTACT_SVC_NOTIFICATIONS:
 		case CMD_DISABLE_CONTACT_SVC_NOTIFICATIONS:
-			process_contact_command(cmd, entry_time, args);
+			ret = process_contact_command(cmd, entry_time, args);
 			break;
 
 
@@ -1131,7 +1154,7 @@ int process_external_command2(int cmd, time_t entry_time, char *args) {
 		case CMD_DISABLE_CONTACTGROUP_HOST_NOTIFICATIONS:
 		case CMD_ENABLE_CONTACTGROUP_SVC_NOTIFICATIONS:
 		case CMD_DISABLE_CONTACTGROUP_SVC_NOTIFICATIONS:
-			process_contactgroup_command(cmd, entry_time, args);
+			ret = process_contactgroup_command(cmd, entry_time, args);
 			break;
 
 
@@ -1142,50 +1165,50 @@ int process_external_command2(int cmd, time_t entry_time, char *args) {
 
 		case CMD_ADD_HOST_COMMENT:
 		case CMD_ADD_SVC_COMMENT:
-			cmd_add_comment(cmd, entry_time, args);
+			ret= cmd_add_comment(cmd, entry_time, args);
 			break;
 
 		case CMD_DEL_HOST_COMMENT:
 		case CMD_DEL_SVC_COMMENT:
-			cmd_delete_comment(cmd, args);
+			ret = cmd_delete_comment(cmd, args);
 			break;
 
 		case CMD_DELAY_HOST_NOTIFICATION:
 		case CMD_DELAY_SVC_NOTIFICATION:
-			cmd_delay_notification(cmd, args);
+			ret = cmd_delay_notification(cmd, args);
 			break;
 
 		case CMD_SCHEDULE_SVC_CHECK:
 		case CMD_SCHEDULE_FORCED_SVC_CHECK:
-			cmd_schedule_check(cmd, args);
+			ret =cmd_schedule_check(cmd, args);
 			break;
 
 		case CMD_SCHEDULE_HOST_SVC_CHECKS:
 		case CMD_SCHEDULE_FORCED_HOST_SVC_CHECKS:
-			cmd_schedule_check(cmd, args);
+			ret = cmd_schedule_check(cmd, args);
 			break;
 
 		case CMD_DEL_ALL_HOST_COMMENTS:
 		case CMD_DEL_ALL_SVC_COMMENTS:
-			cmd_delete_all_comments(cmd, args);
+			ret = cmd_delete_all_comments(cmd, args);
 			break;
 
 		case CMD_PROCESS_SERVICE_CHECK_RESULT:
-			cmd_process_service_check_result(cmd, entry_time, args);
+			ret = cmd_process_service_check_result(cmd, entry_time, args);
 			break;
 
 		case CMD_PROCESS_HOST_CHECK_RESULT:
-			cmd_process_host_check_result(cmd, entry_time, args);
+			ret = cmd_process_host_check_result(cmd, entry_time, args);
 			break;
 
 		case CMD_ACKNOWLEDGE_HOST_PROBLEM:
 		case CMD_ACKNOWLEDGE_SVC_PROBLEM:
-			cmd_acknowledge_problem(cmd, args);
+			ret = cmd_acknowledge_problem(cmd, args);
 			break;
 
 		case CMD_REMOVE_HOST_ACKNOWLEDGEMENT:
 		case CMD_REMOVE_SVC_ACKNOWLEDGEMENT:
-			cmd_remove_acknowledgement(cmd, args);
+			ret = cmd_remove_acknowledgement(cmd, args);
 			break;
 
 		case CMD_SCHEDULE_HOST_DOWNTIME:
@@ -1197,29 +1220,29 @@ int process_external_command2(int cmd, time_t entry_time, char *args) {
 		case CMD_SCHEDULE_SERVICEGROUP_SVC_DOWNTIME:
 		case CMD_SCHEDULE_AND_PROPAGATE_HOST_DOWNTIME:
 		case CMD_SCHEDULE_AND_PROPAGATE_TRIGGERED_HOST_DOWNTIME:
-			cmd_schedule_downtime(cmd, entry_time, args);
+			ret = cmd_schedule_downtime(cmd, entry_time, args);
 			break;
 
 		case CMD_DEL_HOST_DOWNTIME:
 		case CMD_DEL_SVC_DOWNTIME:
-			cmd_delete_downtime(cmd, args);
+			ret = cmd_delete_downtime(cmd, args);
 			break;
 
 		case CMD_DEL_DOWNTIME_BY_HOST_NAME:
-			cmd_delete_downtime_by_host_name(cmd, args);
+			ret = cmd_delete_downtime_by_host_name(cmd, args);
 			break;
 
 		case CMD_DEL_DOWNTIME_BY_HOSTGROUP_NAME:
-			cmd_delete_downtime_by_hostgroup_name(cmd, args);
+			ret = cmd_delete_downtime_by_hostgroup_name(cmd, args);
 			break;
 
 		case CMD_DEL_DOWNTIME_BY_START_TIME_COMMENT:
-			cmd_delete_downtime_by_start_time_comment(cmd, args);
+			ret = cmd_delete_downtime_by_start_time_comment(cmd, args);
 			break;
 
 		case CMD_SCHEDULE_HOST_CHECK:
 		case CMD_SCHEDULE_FORCED_HOST_CHECK:
-			cmd_schedule_check(cmd, args);
+			ret = cmd_schedule_check(cmd, args);
 			break;
 
 		case CMD_CHANGE_GLOBAL_HOST_EVENT_HANDLER:
@@ -1234,7 +1257,7 @@ int process_external_command2(int cmd, time_t entry_time, char *args) {
 		case CMD_CHANGE_SVC_NOTIFICATION_TIMEPERIOD:
 		case CMD_CHANGE_CONTACT_HOST_NOTIFICATION_TIMEPERIOD:
 		case CMD_CHANGE_CONTACT_SVC_NOTIFICATION_TIMEPERIOD:
-			cmd_change_object_char_var(cmd, args);
+			ret = cmd_change_object_char_var(cmd, args);
 			break;
 
 		case CMD_CHANGE_NORMAL_HOST_CHECK_INTERVAL:
@@ -1248,13 +1271,13 @@ int process_external_command2(int cmd, time_t entry_time, char *args) {
 		case CMD_CHANGE_CONTACT_MODATTR:
 		case CMD_CHANGE_CONTACT_MODHATTR:
 		case CMD_CHANGE_CONTACT_MODSATTR:
-			cmd_change_object_int_var(cmd, args);
+			ret = cmd_change_object_int_var(cmd, args);
 			break;
 
 		case CMD_CHANGE_CUSTOM_HOST_VAR:
 		case CMD_CHANGE_CUSTOM_SVC_VAR:
 		case CMD_CHANGE_CUSTOM_CONTACT_VAR:
-			cmd_change_object_custom_var(cmd, args);
+			ret = cmd_change_object_custom_var(cmd, args);
 			break;
 
 
@@ -1264,7 +1287,7 @@ int process_external_command2(int cmd, time_t entry_time, char *args) {
 
 
 		case CMD_PROCESS_FILE:
-			cmd_process_external_commands_from_file(cmd, args);
+			ret = cmd_process_external_commands_from_file(cmd, args);
 			break;
 
 
@@ -1278,11 +1301,11 @@ int process_external_command2(int cmd, time_t entry_time, char *args) {
 			break;
 
 		default:
-			return ERROR;
+			return CMD_ERROR_UNKNOWN_COMMAND;
 			break;
 		}
 
-	return OK;
+	return ret;
 	}
 
 
@@ -2214,8 +2237,7 @@ int process_passive_service_check(time_t check_time, char *host_name, char *svc_
 	cr.service_description = temp_service->description;
 	cr.output = output;
 	cr.start_time.tv_sec = cr.finish_time.tv_sec = check_time;
-	cr.engine = &nagios_check_engine;
-	cr.source = &command_worker;
+	cr.source = command_worker.source_name;
 
 	/* save the return code and make sure it's sane */
 	cr.return_code = return_code;
@@ -2307,8 +2329,7 @@ int process_passive_host_check(time_t check_time, char *host_name, int return_co
 	cr.host_name = temp_host->name;
 	cr.output = output;
 	cr.start_time.tv_sec = cr.finish_time.tv_sec = check_time;
-	cr.engine = &nagios_check_engine;
-	cr.source = &command_worker;
+	cr.source = command_worker.source_name;
 	cr.return_code = return_code;
 
 	/* calculate latency */
@@ -2658,7 +2679,6 @@ int cmd_delete_downtime(int cmd, char *args) {
 	}
 
 
-/* Opsview enhancements: some of these commands are now "distributable" as no downtime ids are used */
 /* Deletes scheduled host and service downtime based on hostname and optionally other filter arguments */
 int cmd_delete_downtime_by_host_name(int cmd, char *args) {
 	char *temp_ptr = NULL;
@@ -2704,7 +2724,6 @@ int cmd_delete_downtime_by_host_name(int cmd, char *args) {
 	return OK;
 	}
 
-/* Opsview enhancement: Deletes scheduled host and service downtime based on hostgroup and optionally other filter arguments */
 int cmd_delete_downtime_by_hostgroup_name(int cmd, char *args) {
 	char *temp_ptr = NULL;
 	char *end_ptr = NULL;
@@ -2788,7 +2807,6 @@ int cmd_delete_downtime_by_hostgroup_name(int cmd, char *args) {
 	return OK;
 	}
 
-/* Opsview enhancement: Delete downtimes based on start time and/or comment */
 int cmd_delete_downtime_by_start_time_comment(int cmd, char *args) {
 	time_t downtime_start_time = 0L;
 	char *downtime_comment = NULL;

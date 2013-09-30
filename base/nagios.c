@@ -383,6 +383,13 @@ int main(int argc, char **argv) {
 
 	config_file_dir = nspath_absolute_dirname(config_file, NULL);
 
+	/* 
+	 * Set the signal handler for the SIGXFSZ signal here because
+	 * we may encounter this signal before the other signal handlers
+	 * are set.
+	 */
+	signal(SIGXFSZ, handle_sigxfsz);
+
 	/*
 	 * let's go to town. We'll be noisy if we're verifying config
 	 * or running scheduling tests.
@@ -545,6 +552,10 @@ int main(int argc, char **argv) {
 
 		/* keep monitoring things until we get a shutdown command */
 		do {
+			/* reset internal book-keeping (in case we're restarting) */
+			wproc_num_workers_spawned = wproc_num_workers_online = 0;
+			caught_signal = sigshutdown = sigrestart = FALSE;
+			sig_id = 0;
 
 			/* reset program variables */
 			reset_variables();
@@ -827,9 +838,9 @@ int main(int argc, char **argv) {
 				cleanup_status_data(TRUE);
 				}
 
+			free_worker_memory(WPROC_FORCE);
 			/* shutdown stuff... */
 			if(sigshutdown == TRUE) {
-				free_worker_memory(WPROC_FORCE);
 				iobroker_destroy(nagios_iobs, IOBROKER_CLOSE_SOCKETS);
 				nagios_iobs = NULL;
 

@@ -179,8 +179,10 @@ int read_main_config_file(char *main_config_file) {
 			error = set_loadctl_options(value, strlen(value)) != OK;
 		else if(!strcmp(variable, "check_workers"))
 			num_check_workers = atoi(value);
-		else if(!strcmp(variable, "query_socket"))
-			qh_socket_path = (char *)strdup(value);
+		else if(!strcmp(variable, "query_socket")) {
+			my_free(qh_socket_path);
+			qh_socket_path = nspath_absolute(value, config_file_dir);
+		}
 		else if(!strcmp(variable, "log_file")) {
 
 			if(strlen(value) > MAX_FILENAME_LENGTH - 1) {
@@ -1093,22 +1095,62 @@ int read_main_config_file(char *main_config_file) {
 		else if(!strcmp(variable, "bare_update_check"))
 			bare_update_check = (atoi(value) > 0) ? TRUE : FALSE;
 
-		/* skip external data directives */
-		else if(strstr(input, "x") == input)
-			continue;
-
-		/* ignore external variables */
+		/* BEGIN status data variables */
 		else if(!strcmp(variable, "status_file"))
-			continue;
-		else if(!strcmp(variable, "perfdata_timeout"))
-			continue;
-		else if(strstr(variable, "host_perfdata") == variable)
-			continue;
-		else if(strstr(variable, "service_perfdata") == variable)
-			continue;
-		else if(strstr(input, "cfg_file=") == input || strstr(input, "cfg_dir=") == input)
-			continue;
+			status_file = nspath_absolute(value, config_file_dir);
 		else if(strstr(input, "state_retention_file=") == input)
+			retention_file = nspath_absolute(value, config_file_dir);
+		/* END status data variables */
+
+		/*** BEGIN perfdata variables ***/
+		else if(!strcmp(variable, "perfdata_timeout")) {
+			perfdata_timeout = atoi(value);
+			}
+		else if(!strcmp(variable, "host_perfdata_command"))
+			host_perfdata_command = (char *)strdup(value);
+		else if(!strcmp(variable, "service_perfdata_command"))
+			service_perfdata_command = (char *)strdup(value);
+		else if(!strcmp(variable, "host_perfdata_file_template"))
+			host_perfdata_file_template = (char *)strdup(value);
+		else if(!strcmp(variable, "service_perfdata_file_template"))
+			service_perfdata_file_template = (char *)strdup(value);
+		else if(!strcmp(variable, "host_perfdata_file"))
+			host_perfdata_file = nspath_absolute(value, config_file_dir);
+		else if(!strcmp(variable, "service_perfdata_file"))
+			service_perfdata_file = nspath_absolute(value, config_file_dir);
+		else if(!strcmp(variable, "host_perfdata_file_mode")) {
+			host_perfdata_file_pipe = FALSE;
+			if(strstr(value, "p") != NULL)
+				host_perfdata_file_pipe = TRUE;
+			else if(strstr(value, "w") != NULL)
+				host_perfdata_file_append = FALSE;
+			else
+				host_perfdata_file_append = TRUE;
+			}
+		else if(!strcmp(variable, "service_perfdata_file_mode")) {
+			service_perfdata_file_pipe = FALSE;
+			if(strstr(value, "p") != NULL)
+				service_perfdata_file_pipe = TRUE;
+			else if(strstr(value, "w") != NULL)
+				service_perfdata_file_append = FALSE;
+			else
+				service_perfdata_file_append = TRUE;
+			}
+		else if(!strcmp(variable, "host_perfdata_file_processing_interval"))
+			host_perfdata_file_processing_interval = strtoul(value, NULL, 0);
+		else if(!strcmp(variable, "service_perfdata_file_processing_interval"))
+			service_perfdata_file_processing_interval = strtoul(value, NULL, 0);
+		else if(!strcmp(variable, "host_perfdata_file_processing_command"))
+			host_perfdata_file_processing_command = (char *)strdup(value);
+		else if(!strcmp(variable, "service_perfdata_file_processing_command"))
+			service_perfdata_file_processing_command = (char *)strdup(value);
+		else if(!strcmp(variable,"host_perfdata_process_empty_results"))
+			host_perfdata_process_empty_results = (atoi(value) > 0) ? TRUE : FALSE;
+		else if(!strcmp(variable,"service_perfdata_process_empty_results"))
+			service_perfdata_process_empty_results = (atoi(value) > 0) ? TRUE : FALSE;
+		/*** END perfdata variables */
+
+		else if(strstr(input, "cfg_file=") == input || strstr(input, "cfg_dir=") == input)
 			continue;
 		else if(strstr(input, "object_cache_file=") == input) {
 			my_free(object_cache_file);
@@ -1123,6 +1165,9 @@ int read_main_config_file(char *main_config_file) {
 		else if(!strcmp(variable, "allow_empty_hostgroup_assignment")) {
 			allow_empty_hostgroup_assignment = (atoi(value) > 0) ? TRUE : FALSE;
 			}
+		/* skip external data directives */
+		else if(strstr(input, "x") == input)
+			continue;
 
 		/* we don't know what this variable is... */
 		else {
@@ -1509,12 +1554,12 @@ int pre_flight_object_check(int *w, int *e) {
 		}
 #endif
 
+	if(verify_config)
+		printf("Checking objects...\n");
 
 	/*****************************************/
 	/* check each service...                 */
 	/*****************************************/
-	if(verify_config)
-		printf("Checking services...\n");
 	if(get_service_count() == 0) {
 		logit(NSLOG_VERIFICATION_ERROR, TRUE, "Error: There are no services defined!");
 		errors++;
@@ -1598,9 +1643,6 @@ int pre_flight_object_check(int *w, int *e) {
 	/*****************************************/
 	/* check all hosts...                    */
 	/*****************************************/
-	if(verify_config)
-		printf("Checking hosts...\n");
-
 	if(get_host_count() == 0) {
 		logit(NSLOG_VERIFICATION_ERROR, TRUE, "Error: There are no hosts defined!");
 		errors++;
@@ -1703,8 +1745,6 @@ int pre_flight_object_check(int *w, int *e) {
 	/*****************************************/
 	/* check each host group...              */
 	/*****************************************/
-	if(verify_config)
-		printf("Checking host groups...\n");
 	for(temp_hostgroup = hostgroup_list, total_objects = 0; temp_hostgroup != NULL; temp_hostgroup = temp_hostgroup->next, total_objects++) {
 		/* check for illegal characters in hostgroup name */
 		if(use_precached_objects == FALSE) {
@@ -1722,8 +1762,6 @@ int pre_flight_object_check(int *w, int *e) {
 	/*****************************************/
 	/* check each service group...           */
 	/*****************************************/
-	if(verify_config)
-		printf("Checking service groups...\n");
 	for(temp_servicegroup = servicegroup_list, total_objects = 0; temp_servicegroup != NULL; temp_servicegroup = temp_servicegroup->next, total_objects++) {
 		/* check for illegal characters in servicegroup name */
 		if(use_precached_objects == FALSE) {
@@ -1742,8 +1780,6 @@ int pre_flight_object_check(int *w, int *e) {
 	/*****************************************/
 	/* check all contacts...                 */
 	/*****************************************/
-	if(verify_config)
-		printf("Checking contacts...\n");
 	if(contact_list == NULL) {
 		logit(NSLOG_VERIFICATION_ERROR, TRUE, "Error: There are no contacts defined!");
 		errors++;
@@ -1839,8 +1875,6 @@ int pre_flight_object_check(int *w, int *e) {
 	/*****************************************/
 	/* check each contact group...           */
 	/*****************************************/
-	if(verify_config)
-		printf("Checking contact groups...\n");
 	for(temp_contactgroup = contactgroup_list, total_objects = 0; temp_contactgroup != NULL; temp_contactgroup = temp_contactgroup->next, total_objects++) {
 		/* check for illegal characters in contactgroup name */
 		if(use_precached_objects == FALSE) {
@@ -1858,9 +1892,6 @@ int pre_flight_object_check(int *w, int *e) {
 	/*****************************************/
 	/* check all commands...                 */
 	/*****************************************/
-	if(verify_config)
-		printf("Checking commands...\n");
-
 	for(temp_command = command_list, total_objects = 0; temp_command != NULL; temp_command = temp_command->next, total_objects++) {
 
 		/* check for illegal characters in command name */
@@ -1880,9 +1911,6 @@ int pre_flight_object_check(int *w, int *e) {
 	/*****************************************/
 	/* check all timeperiods...              */
 	/*****************************************/
-	if(verify_config)
-		printf("Checking time periods...\n");
-
 	for(temp_timeperiod = timeperiod_list, total_objects = 0; temp_timeperiod != NULL; temp_timeperiod = temp_timeperiod->next, total_objects++) {
 
 		/* check for illegal characters in timeperiod name */
@@ -1911,6 +1939,11 @@ int pre_flight_object_check(int *w, int *e) {
 		printf("\tChecked %d time periods.\n", total_objects);
 
 
+	/* help people use scripts to verify that objects are loaded */
+	if(verify_config) {
+		printf("\tChecked %u host escalations.\n", num_objects.hostescalations);
+		printf("\tChecked %u service escalations.\n", num_objects.serviceescalations);
+		}
 
 	/* update warning and error count */
 	*w += warnings;

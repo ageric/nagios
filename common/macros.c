@@ -36,10 +36,10 @@ static char *macro_x_names[MACRO_X_COUNT]; /* the macro names */
 char *macro_user[MAX_USER_MACROS]; /* $USERx$ macros */
 
 struct macro_key_code {
-	char *name; /* macro key name */
+	char *name;  /* macro key name */
+	char *value; /* macro value */
 	int code;  /* numeric macro code, usable in case statements */
-	int clean_options;
-	char *value;
+	int options; /* Options for how the macro can be escaped */
 };
 
 static struct macro_key_code macro_keys[MACRO_X_COUNT];
@@ -110,7 +110,6 @@ int process_macros_r(nagios_macros *mac, char *input_buffer, char **output_buffe
 	char *selected_macro = NULL;
 	char *original_macro = NULL;
 	int result = OK;
-	int clean_options = 0;
 	int free_macro = FALSE;
 	int macro_options = 0;
 
@@ -163,14 +162,10 @@ int process_macros_r(nagios_macros *mac, char *input_buffer, char **output_buffe
 
 		/* looks like we're in a macro, so process it... */
 		else {
-
-			/* reset clean options */
-			clean_options = 0;
-
 			/* grab the macro value */
 			free_macro = FALSE;
-			result = grab_macro_value_r(mac, temp_buffer, &selected_macro, &clean_options, &free_macro);
-			log_debug_info(DEBUGL_MACROS, 2, "  Processed '%s', Clean Options: %d, Free: %d\n", temp_buffer, clean_options, free_macro);
+			result = grab_macro_value_r(mac, temp_buffer, &selected_macro, &macro_options, &free_macro);
+			log_debug_info(DEBUGL_MACROS, 2, "  Processed '%s', Free: %d\n", temp_buffer, free_macro);
 
 			/* an error occurred - we couldn't parse the macro, so continue on */
 			if(result == ERROR) {
@@ -201,15 +196,10 @@ int process_macros_r(nagios_macros *mac, char *input_buffer, char **output_buffe
 
 			/* insert macro */
 			if(selected_macro != NULL) {
-				log_debug_info(DEBUGL_MACROS, 2, "  Processed '%s', Clean Options: %d, Free: %d\n", temp_buffer, clean_options, free_macro);
-
-				/* include any cleaning options passed back to us */
-				macro_options = (options | clean_options);
-
-				log_debug_info(DEBUGL_MACROS, 2, "  Cleaning options: global=%d, local=%d, effective=%d\n", options, clean_options, macro_options);
+				log_debug_info(DEBUGL_MACROS, 2, "  Processed '%s', Free: %d,  Cleaning options: %d\n", temp_buffer, free_macro, options);
 
 				/* URL encode the macro if requested - this allocates new memory */
-				if(macro_options & URL_ENCODE_MACRO_CHARS) {
+				if(options & URL_ENCODE_MACRO_CHARS) {
 					original_macro = selected_macro;
 					selected_macro = get_url_encoded_string(selected_macro);
 					if(free_macro == TRUE) {
@@ -218,12 +208,12 @@ int process_macros_r(nagios_macros *mac, char *input_buffer, char **output_buffe
 					free_macro = TRUE;
 					}
 
-				/* some macros are cleaned... */
-				if(macro_options & STRIP_ILLEGAL_MACRO_CHARS || macro_options & ESCAPE_MACRO_CHARS) {
+				/* some macros should sometimes be cleaned */
+				if(macro_options & options & (STRIP_ILLEGAL_MACRO_CHARS | ESCAPE_MACRO_CHARS)) {
 					char *cleaned_macro = NULL;
 
 					/* add the (cleaned) processed macro to the end of the already processed buffer */
-					if(selected_macro != NULL && (cleaned_macro = clean_macro_chars(selected_macro, macro_options)) != NULL) {
+					if(selected_macro != NULL && (cleaned_macro = clean_macro_chars(selected_macro, options)) != NULL) {
 						*output_buffer = (char *)realloc(*output_buffer, strlen(*output_buffer) + strlen(cleaned_macro) + 1);
 						strcat(*output_buffer, cleaned_macro);
 						if(*cleaned_macro)
@@ -413,9 +403,11 @@ int grab_macro_value_r(nagios_macros *mac, char *macro_buffer, char **output, in
 	/* clear the old macro value */
 	my_free(*output);
 
-	if(macro_buffer == NULL || clean_options == NULL || free_macro == NULL)
+	if(macro_buffer == NULL || free_macro == NULL)
 		return ERROR;
 
+	if(clean_options)
+		*clean_options = 0;
 
 	/*
 	 * We handle argv and user macros first, since those are by far
@@ -488,13 +480,15 @@ int grab_macro_value_r(nagios_macros *mac, char *macro_buffer, char **output, in
 
 	if ((mkey = find_macro_key(macro_name))) {
 		log_debug_info(DEBUGL_MACROS, 2, "  macros[%d] (%s) match.\n", mkey->code, macro_x_names[mkey->code]);
-		if (mkey->clean_options) {
-			*clean_options |= mkey->clean_options;
-			log_debug_info(DEBUGL_MACROS, 2, "  New clean options: %d\n", *clean_options);
-			}
 
 		/* get the macro value */
 		result = grab_macrox_value_r(mac, mkey->code, arg[0], arg[1], output, free_macro);
+
+		/* Return the macro attributes */
+
+		if(clean_options) {
+			*clean_options = mkey->options;
+			}
 		}
 	/***** CONTACT ADDRESS MACROS *****/
 	/* NOTE: the code below should be broken out into a separate function */
@@ -2389,12 +2383,6 @@ char *clean_macro_chars(char *macro, int options) {
 		ret[y++] = '\x0';
 		}
 
-#ifdef ON_HOLD_FOR_NOW
-	/* escape nasty character in macro */
-	if(options & ESCAPE_MACRO_CHARS) {
-		}
-#endif
-
 	return ret;
 	}
 
@@ -2402,10 +2390,35 @@ char *clean_macro_chars(char *macro, int options) {
 
 /* encodes a string in proper URL format */
 char *get_url_encoded_string(char *input) {
+	/* From RFC 3986:
+	segment       = *pchar
+
+	[...]
+
+	pchar         = unreserved / pct-encoded / sub-delims / ":" / "@"
+
+	query         = *( pchar / "/" / "?" )
+
+	fragment      = *( pchar / "/" / "?" )
+
+	pct-encoded   = "%" HEXDIG HEXDIG
+
+	unreserved    = ALPHA / DIGIT / "-" / "." / "_" / "~"
+	reserved      = gen-delims / sub-delims
+	gen-delims    = ":" / "/" / "?" / "#" / "[" / "]" / "@"
+	sub-delims    = "!" / "$" / "&" / "'" / "(" / ")"
+	                 / "*" / "+" / "," / ";" / "="
+
+	Encode everything but "unreserved", to be on safe side.
+
+	Another note:
+	nowhere in the RFC states that + is interpreted as space. Therefore, encode
+	space as %20 (as all other characters that should be escaped)
+	*/
+
 	register int x = 0;
 	register int y = 0;
 	char *encoded_url_string = NULL;
-	char temp_expansion[6] = "";
 
 
 	/* bail if no input */
@@ -2417,25 +2430,23 @@ char *get_url_encoded_string(char *input) {
 		return NULL;
 
 	/* check/encode all characters */
-	for(x = 0, y = 0; input[x] != (char)'\x0'; x++) {
+	for(x = 0, y = 0; input[x]; x++) {
 
 		/* alpha-numeric characters and a few other characters don't get encoded */
-		if(((char)input[x] >= '0' && (char)input[x] <= '9') || ((char)input[x] >= 'A' && (char)input[x] <= 'Z') || ((char)input[x] >= (char)'a' && (char)input[x] <= (char)'z') || (char)input[x] == (char)'.' || (char)input[x] == (char)'-' || (char)input[x] == (char)'_' || (char)input[x] == (char)':' || (char)input[x] == (char)'/' || (char)input[x] == (char)'?' || (char)input[x] == (char)'=' || (char)input[x] == (char)'&') {
-			encoded_url_string[y] = input[x];
-			y++;
-			}
-
-		/* spaces are pluses */
-		else if((char)input[x] <= (char)' ') {
-			encoded_url_string[y] = '+';
-			y++;
-			}
+		if(((char)input[x] >= '0' && (char)input[x] <= '9') ||
+		   ((char)input[x] >= 'A' && (char)input[x] <= 'Z') ||
+		   ((char)input[x] >= 'a' && (char)input[x] <= 'z') ||
+		   (char)input[x] == '.' ||
+		   (char)input[x] == '-' ||
+		   (char)input[x] == '_' ||
+		   (char)input[x] == '~')
+		{
+			encoded_url_string[y++] = input[x];
+		}
 
 		/* anything else gets represented by its hex value */
 		else {
-			encoded_url_string[y] = '\x0';
-			sprintf(temp_expansion, "%%%02X", (unsigned int)(input[x] & 0xFF));
-			strcat(encoded_url_string, temp_expansion);
+			sprintf(&encoded_url_string[y], "%%%02X", (unsigned int)(input[x] & 0xFF));
 			y += 3;
 			}
 		}
@@ -2492,31 +2503,22 @@ int init_macros(void) {
 	for (x = 0; x < MACRO_X_COUNT; x++) {
 		macro_keys[x].code = x;
 		macro_keys[x].name = macro_x_names[x];
-		macro_keys[x].clean_options = 0;
 
-		switch (x) {
-			/* output, perfdata, comments and author names need cleaning */
-		case MACRO_HOSTOUTPUT: case MACRO_SERVICEOUTPUT:
-		case MACRO_HOSTPERFDATA: case MACRO_SERVICEPERFDATA:
-		case MACRO_HOSTACKAUTHOR: case MACRO_HOSTACKCOMMENT:
-		case MACRO_SERVICEACKAUTHOR: case MACRO_SERVICEACKCOMMENT:
-		case MACRO_LONGHOSTOUTPUT: case MACRO_LONGSERVICEOUTPUT:
-		case MACRO_HOSTGROUPNOTES: case MACRO_SERVICEGROUPNOTES:
-			macro_keys[x].clean_options = (STRIP_ILLEGAL_MACRO_CHARS | ESCAPE_MACRO_CHARS);
+		/* This tells which escaping is possible to do on the macro */
+		macro_keys[x].options = URL_ENCODE_MACRO_CHARS;
+		switch(x) {
+		case MACRO_HOSTOUTPUT:
+		case MACRO_HOSTPERFDATA:
+		case MACRO_HOSTACKAUTHOR:
+		case MACRO_HOSTACKCOMMENT:
+		case MACRO_SERVICEOUTPUT:
+		case MACRO_SERVICEPERFDATA:
+		case MACRO_SERVICEACKAUTHOR:
+		case MACRO_SERVICEACKCOMMENT:
+			macro_keys[x].options |= STRIP_ILLEGAL_MACRO_CHARS | ESCAPE_MACRO_CHARS;
 			break;
-
-			/* url macros get url-encoded */
-		case MACRO_HOSTACTIONURL: case MACRO_HOSTNOTESURL:
-		case MACRO_SERVICEACTIONURL: case MACRO_SERVICENOTESURL:
-		case MACRO_HOSTGROUPNOTESURL: case MACRO_HOSTGROUPACTIONURL:
-		case MACRO_SERVICEGROUPNOTESURL: case MACRO_SERVICEGROUPACTIONURL:
-			macro_keys[x].clean_options = URL_ENCODE_MACRO_CHARS;
-			break;
-		default:
-			macro_keys[x].clean_options = 0;
-			break;
-			}
 		}
+	}
 
 	qsort(macro_keys, x, sizeof(struct macro_key_code), macro_key_cmp);
 	return OK;

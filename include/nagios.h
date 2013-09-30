@@ -148,6 +148,7 @@ extern int retention_update_interval;
 extern int use_retained_program_state;
 extern int use_retained_scheduling_info;
 extern int retention_scheduling_horizon;
+extern char *retention_file;
 extern unsigned long retained_host_attribute_mask;
 extern unsigned long retained_service_attribute_mask;
 extern unsigned long retained_contact_host_attribute_mask;
@@ -159,6 +160,7 @@ extern int translate_passive_host_checks;
 extern int passive_host_checks_are_soft;
 
 extern int status_update_interval;
+extern char *retention_file;
 
 extern int time_change_threshold;
 
@@ -195,7 +197,6 @@ extern int currently_running_host_checks;
 extern unsigned long next_event_id;
 extern unsigned long next_problem_id;
 extern unsigned long next_comment_id;
-extern unsigned long next_downtime_id;
 extern unsigned long next_notification_id;
 
 extern unsigned long modified_process_attributes;
@@ -206,6 +207,26 @@ extern squeue_t *nagios_squeue;
 extern iobroker_set *nagios_iobs;
 
 extern struct check_stats check_statistics[MAX_CHECK_STATS_TYPES];
+
+/*** perfdata variables ***/
+extern int     perfdata_timeout;
+extern char    *host_perfdata_command;
+extern char    *service_perfdata_command;
+extern char    *host_perfdata_file_template;
+extern char    *service_perfdata_file_template;
+extern char    *host_perfdata_file;
+extern char    *service_perfdata_file;
+extern int     host_perfdata_file_append;
+extern int     service_perfdata_file_append;
+extern int     host_perfdata_file_pipe;
+extern int     service_perfdata_file_pipe;
+extern unsigned long host_perfdata_file_processing_interval;
+extern unsigned long service_perfdata_file_processing_interval;
+extern char    *host_perfdata_file_processing_command;
+extern char    *service_perfdata_file_processing_command;
+extern int     host_perfdata_process_empty_results;
+extern int     service_perfdata_process_empty_results;
+/*** end perfdata variables */
 
 extern struct notify_list *notification_list;
 
@@ -343,27 +364,32 @@ extern struct load_control loadctl;
 #define EVENT_SLEEP                     98      /* asynchronous sleep event that occurs when event queues are empty */
 #define EVENT_USER_FUNCTION             99      /* USER-defined function (modules) */
 
-#define EVENT_TYPE_STR( type)	( \
-	type == EVENT_SERVICE_CHECK ? "EVENT_SERVICE_CHECK" : \
-	type == EVENT_COMMAND_CHECK ? "EVENT_COMMAND_CHECK" : \
-	type == EVENT_LOG_ROTATION ? "EVENT_LOG_ROTATION" : \
-	type == EVENT_PROGRAM_SHUTDOWN ? "EVENT_PROGRAM_SHUTDOWN" : \
-	type == EVENT_PROGRAM_RESTART ? "EVENT_PROGRAM_RESTART" : \
-	type == EVENT_CHECK_REAPER ? "EVENT_CHECK_REAPER" : \
-	type == EVENT_ORPHAN_CHECK ? "EVENT_ORPHAN_CHECK" : \
-	type == EVENT_RETENTION_SAVE ? "EVENT_RETENTION_SAVE" : \
-	type == EVENT_STATUS_SAVE ? "EVENT_STATUS_SAVE" : \
-	type == EVENT_SCHEDULED_DOWNTIME ? "EVENT_SCHEDULED_DOWNTIME" : \
-	type == EVENT_SFRESHNESS_CHECK ? "EVENT_SFRESHNESS_CHECK" : \
-	type == EVENT_EXPIRE_DOWNTIME ? "EVENT_EXPIRE_DOWNTIME" : \
-	type == EVENT_HOST_CHECK ? "EVENT_HOST_CHECK" : \
-	type == EVENT_HFRESHNESS_CHECK ? "EVENT_HFRESHNESS_CHECK" : \
-	type == EVENT_RESCHEDULE_CHECKS ? "EVENT_RESCHEDULE_CHECKS" : \
-	type == EVENT_EXPIRE_COMMENT ? "EVENT_EXPIRE_COMMENT" : \
-	type == EVENT_CHECK_PROGRAM_UPDATE ? "EVENT_CHECK_PROGRAM_UPDATE" : \
-	type == EVENT_SLEEP ? "EVENT_SLEEP" : \
-	type == EVENT_USER_FUNCTION ? "EVENT_USER_FUNCTION" : \
-	"UNKNOWN_EVENT_TYPE" \
+/*
+ * VERSIONFIX: Make EVENT_SLEEP and EVENT_USER_FUNCTION appear
+ * linearly in order.
+ */
+
+#define EVENT_TYPE_STR(type)	( \
+	type == EVENT_SERVICE_CHECK ? "SERVICE_CHECK" : \
+	type == EVENT_COMMAND_CHECK ? "COMMAND_CHECK" : \
+	type == EVENT_LOG_ROTATION ? "LOG_ROTATION" : \
+	type == EVENT_PROGRAM_SHUTDOWN ? "PROGRAM_SHUTDOWN" : \
+	type == EVENT_PROGRAM_RESTART ? "PROGRAM_RESTART" : \
+	type == EVENT_CHECK_REAPER ? "CHECK_REAPER" : \
+	type == EVENT_ORPHAN_CHECK ? "ORPHAN_CHECK" : \
+	type == EVENT_RETENTION_SAVE ? "RETENTION_SAVE" : \
+	type == EVENT_STATUS_SAVE ? "STATUS_SAVE" : \
+	type == EVENT_SCHEDULED_DOWNTIME ? "SCHEDULED_DOWNTIME" : \
+	type == EVENT_SFRESHNESS_CHECK ? "SFRESHNESS_CHECK" : \
+	type == EVENT_EXPIRE_DOWNTIME ? "EXPIRE_DOWNTIME" : \
+	type == EVENT_HOST_CHECK ? "HOST_CHECK" : \
+	type == EVENT_HFRESHNESS_CHECK ? "HFRESHNESS_CHECK" : \
+	type == EVENT_RESCHEDULE_CHECKS ? "RESCHEDULE_CHECKS" : \
+	type == EVENT_EXPIRE_COMMENT ? "EXPIRE_COMMENT" : \
+	type == EVENT_CHECK_PROGRAM_UPDATE ? "CHECK_PROGRAM_UPDATE" : \
+	type == EVENT_SLEEP ? "SLEEP" : \
+	type == EVENT_USER_FUNCTION ? "USER_FUNCTION" : \
+	"UNKNOWN" \
 )
 
 
@@ -395,7 +421,10 @@ NAGIOS_BEGIN_DECL
 /* useful for hosts and services to determine time 'til next check */
 #define normal_check_window(o) ((time_t)(o->check_interval * interval_length))
 #define retry_check_window(o) ((time_t)(o->retry_interval * interval_length))
-#define check_window(o) (o->state_type == SOFT_STATE ? retry_check_window(o) : normal_check_window(o))
+#define check_window(o) \
+	((!o->current_state && o->state_type == SOFT_STATE) ? \
+		retry_check_window(o) : \
+		normal_check_window(o))
 
 /** Nerd subscription type */
 struct nerd_subscription {
@@ -424,6 +453,7 @@ extern int nerd_broadcast(unsigned int chan_id, void *buf, unsigned int len);
 
 /*** Query Handler functions, types and macros*/
 typedef int (*qh_handler)(int, char *, unsigned int);
+extern int dump_event_stats(int sd);
 
 /* return codes for query_handlers() */
 #define QH_OK        0  /* keep listening */
@@ -448,6 +478,8 @@ int pre_flight_circular_check(int *, int *);             	/* detects circular de
 void init_timing_loop(void);                         		/* setup the initial scheduling queue */
 void setup_sighandler(void);                         		/* trap signals */
 void reset_sighandler(void);                         		/* reset signals to default action */
+extern void handle_sigxfsz(int);				/* handle SIGXFSZ */
+
 int daemon_init(void);				     		/* switches to daemon mode */
 int drop_privileges(char *, char *);				/* drops privileges before startup */
 void display_scheduling_info(void);				/* displays service check scheduling information */

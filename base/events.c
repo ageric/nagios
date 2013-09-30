@@ -34,10 +34,40 @@
 /* the event we're currently processing */
 static timed_event *current_event;
 
+static unsigned int event_count[EVENT_USER_FUNCTION + 1];
+
 /******************************************************************/
 /************ EVENT SCHEDULING/HANDLING FUNCTIONS *****************/
 /******************************************************************/
 
+int dump_event_stats(int sd)
+{
+	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(event_count); i++) {
+		nsock_printf(sd, "%s=%u;", EVENT_TYPE_STR(i), event_count[i]);
+		/*
+		 * VERSIONFIX: Make EVENT_SLEEP and EVENT_USER_FUNCTION
+		 * appear in linear order in include/nagios.h when we go
+		 * from 4.0 -> 4.1, so we can remove this junk.
+		 */
+		if (i == 16)
+			i = 97;
+		}
+	nsock_printf_nul(sd, "SQUEUE_ENTRIES=%u", squeue_size(nagios_squeue));
+
+	return OK;
+	}
+
+static void track_events(unsigned int type, int add)
+{
+	/*
+	 * remove_event() calls track_events() with add being -1.
+	 * add_event() calls us with add being 1
+	 */
+	if (type < ARRAY_SIZE(event_count))
+		event_count[type] += add;
+	}
 
 /* initialize the event timing loop before we start monitoring */
 void init_timing_loop(void) {
@@ -739,8 +769,8 @@ timed_event *schedule_new_event(int event_type, int high_priority, time_t run_ti
 	get_datetime_string(&run_time, run_time_string, MAX_DATETIME_LENGTH,
 			SHORT_DATE_TIME);
 	log_debug_info(DEBUGL_EVENTS, 0, "New Event Details:\n");
-	log_debug_info(DEBUGL_EVENTS, 0, " Type:                       %s\n",
-			EVENT_TYPE_STR( event_type));
+	log_debug_info(DEBUGL_EVENTS, 0, " Type:                       EVENT_%s\n",
+			EVENT_TYPE_STR(event_type));
 	log_debug_info(DEBUGL_EVENTS, 0, " High Priority:              %s\n",
 			( high_priority ? "Yes" : "No"));
 	log_debug_info(DEBUGL_EVENTS, 0, " Run Time:                   %s\n",
@@ -816,6 +846,13 @@ void add_event(squeue_t *sq, timed_event *event) {
 
 	log_debug_info(DEBUGL_FUNCTIONS, 0, "add_event()\n");
 
+	if(event->sq_event) {
+		logit(NSLOG_RUNTIME_ERROR, TRUE,
+		      "Error: Adding %s event that seems to already be scheduled\n",
+		      EVENT_TYPE_STR(event->event_type));
+		remove_event(sq, event);
+	}
+
 	if(event->priority) {
 		event->sq_event = squeue_add_usec(sq, event->run_time, event->priority - 1, event);
 		}
@@ -823,9 +860,12 @@ void add_event(squeue_t *sq, timed_event *event) {
 		event->sq_event = squeue_add(sq, event->run_time, event);
 		}
 	if(!event->sq_event) {
-		logit(NSLOG_RUNTIME_ERROR, TRUE, "Failed to add event to squeue '%p' with prio %u: %s\n",
+		logit(NSLOG_RUNTIME_ERROR, TRUE, "Error: Failed to add event to squeue '%p' with prio %u: %s\n",
 			  sq, event->priority, strerror(errno));
 		}
+
+	if(sq == nagios_squeue)
+		track_events(event->event_type, +1);
 
 #ifdef USE_EVENT_BROKER
 	else {
@@ -845,11 +885,18 @@ void remove_event(squeue_t *sq, timed_event *event) {
 	/* send event data to broker */
 	broker_timed_event(NEBTYPE_TIMEDEVENT_REMOVE, NEBFLAG_NONE, NEBATTR_NONE, event, NULL);
 #endif
-	if(!event)
+	if(!event || !event->sq_event)
 		return;
 
-	if(sq)
+	if (sq)
 		squeue_remove(sq, event->sq_event);
+	else
+		logit(NSLOG_RUNTIME_ERROR, TRUE,
+		      "Error: remove_event() called for %s event with NULL sq parameter\n",
+		      EVENT_TYPE_STR(event->event_type));
+
+	if(sq == nagios_squeue)
+		track_events(event->event_type, -1);
 
 	event->sq_event = NULL; /* mark this event as unscheduled */
 
@@ -902,7 +949,7 @@ static int should_run_event(timed_event *temp_event)
 
 		/* don't run a service check if active checks are disabled */
 		if(execute_service_checks == FALSE) {
-			log_debug_info(DEBUGL_EVENTS | DEBUGL_CHECKS, 1, "We're not executing service checks right now, so we'll skip this event.\n");
+			log_debug_info(DEBUGL_EVENTS | DEBUGL_CHECKS, 1, "We're not executing service checks right now, so we'll skip check event for service '%s;%s'.\n", temp_service->host_name, temp_service->description);
 			run_event = FALSE;
 		}
 
@@ -915,11 +962,7 @@ static int should_run_event(timed_event *temp_event)
 				temp_service->next_check = (time_t)(temp_service->next_check + nudge_seconds);
 			}
 			else {
-				/* Otherwise reschedule (TODO: This should be smarter as it doesn't consider its timeperiod) */
-				if(temp_service->state_type == SOFT_STATE && temp_service->current_state != STATE_OK)
-					temp_service->next_check = (time_t)(temp_service->next_check + (temp_service->retry_interval * interval_length));
-				else
-					temp_service->next_check = (time_t)(temp_service->next_check + (temp_service->check_interval * interval_length));
+				temp_service->next_check += check_window(temp_service);
 			}
 
 			temp_event->run_time = temp_service->next_check;
@@ -933,25 +976,20 @@ static int should_run_event(timed_event *temp_event)
 	else if(temp_event->event_type == EVENT_HOST_CHECK) {
 		host *temp_host = (host *)temp_event->event_data;
 
-		/* don't run a host check if active checks are disabled */
-		if(execute_host_checks == FALSE) {
-			log_debug_info(DEBUGL_EVENTS | DEBUGL_CHECKS, 1, "We're not executing host checks right now, so we'll skip this event.\n");
-			run_event = FALSE;
-		}
-
 		/* forced checks override normal check logic */
 		if((temp_host->check_options & CHECK_OPTION_FORCE_EXECUTION))
 			return TRUE;
 
+		/* don't run a host check if active checks are disabled */
+		if(execute_host_checks == FALSE) {
+			log_debug_info(DEBUGL_EVENTS | DEBUGL_CHECKS, 1, "We're not executing host checks right now, so we'll skip host check event for host '%s'.\n", temp_host->name);
+			run_event = FALSE;
+		}
+
 		/* reschedule the host check if we can't run it right now */
 		if(run_event == FALSE) {
 			remove_event(nagios_squeue, temp_event);
-
-			if(temp_host->state_type == SOFT_STATE && temp_host->current_state != STATE_OK)
-				temp_host->next_check = (time_t)(temp_host->next_check + (temp_host->retry_interval * interval_length));
-			else
-				temp_host->next_check = (time_t)(temp_host->next_check + (temp_host->check_interval * interval_length));
-
+			temp_host->next_check += check_window(temp_host);
 			temp_event->run_time = temp_host->next_check;
 			reschedule_event(nagios_squeue, temp_event);
 			update_host_status(temp_host, FALSE);
@@ -1106,7 +1144,7 @@ int handle_timed_event(timed_event *event) {
 	broker_timed_event(NEBTYPE_TIMEDEVENT_EXECUTE, NEBFLAG_NONE, NEBATTR_NONE, event, NULL);
 #endif
 
-	log_debug_info(DEBUGL_EVENTS, 0, "** Timed Event ** Type: %s, Run Time: %s", EVENT_TYPE_STR( event->event_type), ctime(&event->run_time));
+	log_debug_info(DEBUGL_EVENTS, 0, "** Timed Event ** Type: EVENT_%s, Run Time: %s", EVENT_TYPE_STR(event->event_type), ctime(&event->run_time));
 
 	/* get event latency */
 	gettimeofday(&tv, NULL);

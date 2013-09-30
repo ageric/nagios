@@ -23,20 +23,14 @@
 #include "../include/config.h"
 #include "../include/common.h"
 #include "../include/objects.h"
-
-#ifdef NSCORE
-#include "../include/nagios.h"
-#endif
+#include "../xdata/xodtemplate.h"
 
 #ifdef NSCGI
 #include "../include/cgiutils.h"
+#else
+#include "../include/nagios.h"
 #endif
 
-/**** IMPLEMENTATION-SPECIFIC HEADER FILES ****/
-
-#ifdef USE_XODTEMPLATE                          /* template-based routines */
-#include "../xdata/xodtemplate.h"
-#endif
 
 
 /*
@@ -272,13 +266,11 @@ int read_object_config_data(const char *main_config_file, int options) {
 	/* reset object counts */
 	memset(&num_objects, 0, sizeof(num_objects));
 
-	/********* IMPLEMENTATION-SPECIFIC INPUT FUNCTION ********/
-#ifdef USE_XODTEMPLATE
 	/* read in data from all text host config files (template-based) */
 	result = xodtemplate_read_config_data(main_config_file, options);
 	if(result != OK)
 		return ERROR;
-#endif
+
 	/* handle any remaining config mangling */
 	post_process_object_config();
 	timing_point("Done post-processing configuration\n");
@@ -671,8 +663,8 @@ host *add_host(char *name, char *display_name, char *alias, char *address, char 
 	/* duplicate non-string vars */
 	new_host->hourly_value = hourly_value;
 	new_host->max_attempts = max_attempts;
-	new_host->check_interval = check_interval;
-	new_host->retry_interval = retry_interval;
+	new_host->check_interval = check_interval == 0.0 ? 1.0 : check_interval;
+	new_host->retry_interval = retry_interval == 0.0 ? 1.0 : retry_interval;
 	new_host->notification_interval = notification_interval;
 	new_host->first_notification_delay = first_notification_delay;
 	new_host->notification_options = notification_options;
@@ -851,6 +843,7 @@ servicesmember *add_service_link_to_host(host *hst, service *service_ptr) {
 	/* add the child entry to the host definition */
 	new_servicesmember->next = hst->services;
 	hst->services = new_servicesmember;
+	hst->hourly_value += service_ptr->hourly_value;
 
 	return new_servicesmember;
 	}
@@ -982,6 +975,9 @@ hostsmember *add_host_to_hostgroup(hostgroup *temp_hostgroup, char *host_name) {
 	new_member->host_name = h->name;
 	new_member->host_ptr = h;
 
+	/* add (unsorted) link from the host to its group */
+	prepend_object_to_objectlist(&h->hostgroups_ptr, (void *)temp_hostgroup);
+
 	/* add the new member to the member list, sorted by host name */
 #ifndef NSCGI
 	if(use_large_installation_tweaks == TRUE) {
@@ -1011,8 +1007,6 @@ hostsmember *add_host_to_hostgroup(hostgroup *temp_hostgroup, char *host_name) {
 		new_member->next = NULL;
 		last_member->next = new_member;
 		}
-
-	prepend_object_to_objectlist(&h->hostgroups_ptr, (void *)temp_hostgroup);
 
 	return new_member;
 	}
@@ -1096,6 +1090,9 @@ servicesmember *add_service_to_servicegroup(servicegroup *temp_servicegroup, cha
 	new_member->service_description = svc->description;
 	new_member->service_ptr = svc;
 
+	/* add (unsorted) link from the service to its groups */
+	prepend_object_to_objectlist(&svc->servicegroups_ptr, temp_servicegroup);
+
 	/*
 	 * add new member to member list, sorted by host name then
 	 * service description, unless we're a large installation, in
@@ -1140,8 +1137,6 @@ servicesmember *add_service_to_servicegroup(servicegroup *temp_servicegroup, cha
 		new_member->next = NULL;
 		last_member->next = new_member;
 		}
-
-	prepend_object_to_objectlist(&svc->servicegroups_ptr, (void *)temp_servicegroup);
 
 	return new_member;
 	}
@@ -1483,8 +1478,8 @@ service *add_service(char *host_name, char *description, char *display_name, cha
 		}
 
 	new_service->hourly_value = hourly_value;
-	new_service->check_interval = check_interval;
-	new_service->retry_interval = retry_interval;
+	new_service->check_interval = check_interval == 0.0 ? 1.0 : check_interval;
+	new_service->retry_interval = retry_interval == 0.0 ? 1.0 : retry_interval;
 	new_service->max_attempts = max_attempts;
 	new_service->parallelize = (parallelize > 0) ? TRUE : FALSE;
 	new_service->notification_interval = notification_interval;
@@ -2739,15 +2734,19 @@ int free_object_data(void) {
 
 
 	/**** free service dependency memory ****/
-	for(i = 0; i < num_objects.servicedependencies; i++)
-		my_free(servicedependency_ary[i]);
-	my_free(servicedependency_ary);
+	if (servicedependency_ary) {
+		for(i = 0; i < num_objects.servicedependencies; i++)
+			my_free(servicedependency_ary[i]);
+		my_free(servicedependency_ary);
+		}
 
 
 	/**** free host dependency memory ****/
-	for(i = 0; i < num_objects.hostdependencies; i++)
-		my_free(hostdependency_ary[i]);
-	my_free(hostdependency_ary);
+	if (hostdependency_ary) {
+		for(i = 0; i < num_objects.hostdependencies; i++)
+			my_free(hostdependency_ary[i]);
+		my_free(hostdependency_ary);
+		}
 
 
 	/**** free host escalation memory ****/
@@ -2916,7 +2915,7 @@ void fcache_timeperiod(FILE *fp, timeperiod *temp_timeperiod)
 
 			fputc('\t', fp);
 			for(tr = temp_daterange->times; tr; tr = tr->next) {
-				fprintf(fp, "%s%c\n", timerange2str(tr), tr->next ? ',' : '\n');
+				fprintf(fp, "%s%c", timerange2str(tr), tr->next ? ',' : '\n');
 			}
 		}
 	}

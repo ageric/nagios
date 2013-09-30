@@ -56,6 +56,9 @@ extern int suppress_alert_window;
 
 extern int enable_splunk_integration;
 
+extern int navbar_search_addresses;
+extern int navbar_search_aliases;
+
 extern hoststatus *hoststatus_list;
 extern servicestatus *servicestatus_list;
 
@@ -136,6 +139,7 @@ time_t current_time;
 
 char alert_message[MAX_MESSAGE_BUFFER];
 char *host_name = NULL;
+char *host_address = NULL;
 char *host_filter = NULL;
 char *hostgroup_name = NULL;
 char *servicegroup_name = NULL;
@@ -186,7 +190,6 @@ int display_header = TRUE;
 
 
 int main(void) {
-	int result = OK;
 	char *sound = NULL;
 	host *temp_host = NULL;
 	hostgroup *temp_hostgroup = NULL;
@@ -204,42 +207,7 @@ int main(void) {
 	/* reset internal variables */
 	reset_cgi_vars();
 
-	/* read the CGI configuration file */
-	result = read_cgi_config_file(get_cgi_config_location());
-	if(result == ERROR) {
-		document_header(FALSE);
-		cgi_config_file_error(get_cgi_config_location());
-		document_footer();
-		return ERROR;
-		}
-
-	/* read the main configuration file */
-	result = read_main_config_file(main_config_file);
-	if(result == ERROR) {
-		document_header(FALSE);
-		main_config_file_error(main_config_file);
-		document_footer();
-		return ERROR;
-		}
-
-	/* read all object configuration data */
-	result = read_all_object_configuration_data(main_config_file, READ_ALL_OBJECT_DATA);
-	if(result == ERROR) {
-		document_header(FALSE);
-		object_data_error();
-		document_footer();
-		return ERROR;
-		}
-
-	/* read all status data */
-	result = read_all_status_data(get_cgi_config_location(), READ_ALL_STATUS_DATA);
-	if(result == ERROR) {
-		document_header(FALSE);
-		status_data_error();
-		document_footer();
-		free_memory();
-		return ERROR;
-		}
+	cgi_init(document_header, document_footer, READ_ALL_OBJECT_DATA, READ_ALL_STATUS_DATA);
 
 	/* initialize macros */
 	init_macros();
@@ -273,8 +241,15 @@ int main(void) {
 					if(is_authorized_for_host(temp_host, &current_authdata) == FALSE)
 						continue;
 					if(!strcmp(host_name, temp_host->address)) {
-						free(host_name);
-						host_name = strdup(temp_host->name);
+						host_address = strdup(temp_host->address);
+						host_filter = malloc(sizeof(char) * (strlen(host_address) * 2 + 3));
+						len = strlen(host_address);
+						for(i = 0; i < len; i++, regex_i++) {
+							host_filter[regex_i] = host_address[i];
+						}
+						host_filter[0] = '^';
+						host_filter[regex_i++] = '$';
+						host_filter[regex_i] = '\0';
 						break;
 						}
 					}
@@ -1553,7 +1528,15 @@ void show_service_detail(void) {
 				show_service = TRUE;
 			else if(host_filter != NULL && 0 == regexec(&preg_hostname, temp_status->host_name, 0, NULL, 0))
 				show_service = TRUE;
+			else if(host_filter != NULL && navbar_search_addresses == TRUE && 0 == regexec(&preg_hostname, temp_host->address, 0, NULL, 0))
+				show_service = TRUE;
+			else if(host_filter != NULL && navbar_search_aliases == TRUE && 0 == regexec(&preg_hostname, temp_host->alias, 0, NULL, 0))
+				show_service = TRUE;
 			else if(!strcmp(host_name, temp_status->host_name))
+				show_service = TRUE;
+			else if(navbar_search_addresses == TRUE && !strcmp(host_name, temp_host->address))
+				show_service = TRUE;
+			else if(navbar_search_aliases == TRUE && !strcmp(host_name, temp_host->alias))
 				show_service = TRUE;
 			}
 
@@ -2526,6 +2509,10 @@ void show_servicegroup_overview(servicegroup *temp_servicegroup) {
 		if(temp_host == NULL)
 			continue;
 
+		/* make sure user has rights to view this host */
+		if(is_authorized_for_host(temp_host, &current_authdata) == FALSE)
+			continue;
+
 		/* skip this if it isn't a new host... */
 		if(temp_host == last_host)
 			continue;
@@ -2731,6 +2718,10 @@ void show_servicegroup_host_totals_summary(servicegroup *temp_servicegroup) {
 		if(temp_host == NULL)
 			continue;
 
+		/* make sure user has rights to view this host */
+		if(is_authorized_for_host(temp_host, &current_authdata) == FALSE)
+			continue;
+
 		/* skip this if it isn't a new host... */
 		if(temp_host == last_host)
 			continue;
@@ -2909,6 +2900,10 @@ void show_servicegroup_service_totals_summary(servicegroup *temp_servicegroup) {
 		/* find the service */
 		temp_service = find_service(temp_member->host_name, temp_member->service_description);
 		if(temp_service == NULL)
+			continue;
+
+		/* make sure user has rights to view this service */
+		if(is_authorized_for_service(temp_service, &current_authdata) == FALSE)
 			continue;
 
 		/* skip this if it isn't a new service... */
@@ -3267,6 +3262,10 @@ void show_servicegroup_grid(servicegroup *temp_servicegroup) {
 		/* find the host */
 		temp_host = find_host(temp_member->host_name);
 		if(temp_host == NULL)
+			continue;
+
+		/* make sure user has rights to view this host */
+		if(is_authorized_for_host(temp_host, &current_authdata) == FALSE)
 			continue;
 
 		/* get the status of the host */
